@@ -10,7 +10,7 @@ DNS域传送(DNS zone transfer)指的是一台备用域名服务器使用来自�
 import dns.resolver
 import dns.zone
 
-from common import resolve, utils
+from common import utils
 from common.module import Module
 from config import logger
 
@@ -34,10 +34,11 @@ class CheckAXFR(Module):
         """
         logger.log('DEBUG', f'尝试对{self.domain}的域名服务器{server}进行域传送')
         try:
-            xfr = dns.query.xfr(server, self.domain, timeout=30.0)
+            xfr = dns.query.xfr(where=server, zone=self.domain,
+                                timeout=5.0, lifetime=10.0)
             zone = dns.zone.from_xfr(xfr)
         except Exception as e:
-            logger.log('DEBUG', str(e))
+            logger.log('DEBUG', e.args)
             logger.log('DEBUG', f'对{self.domain}的域名服务器{server}进行域传送失败')
             return
         names = zone.nodes.keys()
@@ -56,11 +57,11 @@ class CheckAXFR(Module):
         """
         正则匹配响应头中的内容安全策略字段以发现子域名
         """
-        resolver = resolve.dns_resolver()
+        resolver = utils.dns_resolver()
         try:
             answers = resolver.query(self.domain, "NS")
         except Exception as e:
-            logger.log('ERROR', e)
+            logger.log('ERROR', e.args)
             return
         nsservers = [str(answer) for answer in answers]
         if not len(nsservers):
@@ -93,4 +94,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 if __name__ == '__main__':
     do('ZoneTransfer.me')
-    do('example.com')
+    # do('example.com')

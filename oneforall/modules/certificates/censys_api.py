@@ -1,5 +1,4 @@
-import time
-import config
+import api
 from common.query import Query
 from config import logger
 
@@ -11,8 +10,8 @@ class CensysAPI(Query):
         self.module = 'Certificate'
         self.source = "CensysAPIQuery"
         self.addr = 'https://www.censys.io/api/v1/search/certificates'
-        self.id = config.censys_api_id
-        self.secret = config.censys_api_secret
+        self.id = api.censys_api_id
+        self.secret = api.censys_api_secret
         self.delay = 3.0  # Censys 接口查询速率限制 最快2.5秒查1次
 
     def query(self):
@@ -38,7 +37,6 @@ class CensysAPI(Query):
         self.subdomains = self.subdomains.union(subdomains)
         pages = json.get('metadata').get('pages')
         for page in range(2, pages + 1):
-            time.sleep(self.delay)
             data['page'] = page
             resp = self.post(self.addr, json=data, auth=(self.id, self.secret))
             if not resp:

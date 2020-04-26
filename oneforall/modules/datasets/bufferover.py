@@ -1,4 +1,3 @@
-import time
 import cloudscraper
 from common.query import Query
 from config import logger
@@ -16,7 +15,6 @@ class BufferOver(Query):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         # 绕过cloudFlare验证
         scraper = cloudscraper.create_scraper()
         scraper.interpreter = 'js2py'
@@ -27,7 +25,7 @@ class BufferOver(Query):
         except Exception as e:
             logger.log('ERROR', e.args)
             return
-        if not resp:
+        if resp.status_code != 200:
             return
         subdomains = self.match(self.domain, str(resp.json()))
         # 合并搜索子域名搜索结果

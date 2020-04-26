@@ -1,5 +1,4 @@
-import time
-import config
+import api
 from common.query import Query
 
 
@@ -10,13 +9,12 @@ class ChinazAPI(Query):
         self.module = 'Dataset'
         self.source = 'ChinazAPIQuery'
         self.addr = 'https://apidata.chinaz.com/CallAPI/Alexa'
-        self.api = config.chinaz_api
+        self.api = api.chinaz_api
 
     def query(self):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
         params = {'key': self.api, 'domainName': self.domain}

@@ -1,5 +1,3 @@
-# coding=utf-8
-import requests
 import config
 from .module import Module
 from . import utils
@@ -47,7 +45,10 @@ class Search(Module):
         :return: 匹配的子域
         :rtype set
         """
-        resp = requests.head(url, headers=self.header, proxies=self.proxy,
-                             timeout=self.timeout, allow_redirects=False)
+        resp = self.head(url, check=False, allow_redirects=False)
+        if not resp:
+            return set()
         location = resp.headers.get('location')
+        if not location:
+            return set()
         return set(utils.match_subdomain(domain, location))

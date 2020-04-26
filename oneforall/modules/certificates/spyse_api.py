@@ -1,5 +1,4 @@
-import time
-import config
+import api
 from common import utils
 from common.query import Query
 
@@ -11,7 +10,7 @@ class SpyseAPI(Query):
         self.module = 'Certificate'
         self.source = 'CertDBAPIQuery'
         self.addr = 'https://api.spyse.com/v1/subdomains'
-        self.token = config.spyse_api_token
+        self.token = api.spyse_api_token
 
     def query(self):
         """
@@ -19,7 +18,6 @@ class SpyseAPI(Query):
         """
         page_num = 1
         while True:
-            time.sleep(self.delay)
             self.header = self.get_header()
             self.proxy = self.get_proxy(self.source)
             params = {'domain': self.domain,

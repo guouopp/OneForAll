@@ -1,5 +1,4 @@
-import time
-import config
+import api
 from common.query import Query
 
 
@@ -10,13 +9,12 @@ class BinaryEdgeAPI(Query):
         self.module = 'Dataset'
         self.source = 'BinaryEdgeAPIQuery'
         self.addr = 'https://api.binaryedge.io/v2/query/domains/subdomain/'
-        self.api = config.binaryedge_api
+        self.api = api.binaryedge_api
 
     def query(self):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.header.update({'X-Key': self.api})
         self.proxy = self.get_proxy(self.source)

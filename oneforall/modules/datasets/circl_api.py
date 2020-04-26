@@ -1,5 +1,4 @@
-import time
-import config
+import api
 from common.query import Query
 
 
@@ -10,14 +9,13 @@ class CirclAPI(Query):
         self.module = 'Dataset'
         self.source = 'CirclAPIQuery'
         self.addr = 'https://www.circl.lu/pdns/query/'
-        self.user = config.circl_api_username
-        self.pwd = config.circl_api_password
+        self.user = api.circl_api_username
+        self.pwd = api.circl_api_password
 
     def query(self):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
         resp = self.get(self.addr + self.domain, auth=(self.user, self.pwd))

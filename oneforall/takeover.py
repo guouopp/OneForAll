@@ -18,24 +18,24 @@ from tqdm import tqdm
 
 import config
 from config import logger
-from common import resolve, utils
+from common import utils
 from common.module import Module
 from common.domain import Domain
 
 
 def get_fingerprint():
-    path = config.data_storage_path.joinpath('fingerprints.json')
-    with open(path) as file:
+    path = config.data_storage_dir.joinpath('fingerprints.json')
+    with open(path, encoding='utf-8', errors='ignore') as file:
         fingerprints = json.load(file)
     return fingerprints
 
 
 def get_cname(subdomain):
-    resolver = resolve.dns_resolver()
+    resolver = utils.dns_resolver()
     try:
         answers = resolver.query(subdomain, 'CNAME')
     except Exception as e:
-        logger.log('DEBUG', e.args)
+        logger.log('TRACE', e.args)
         return None
     for answer in answers:
         return answer.to_text()  # 一个子域只有一个CNAME记录
@@ -56,21 +56,21 @@ class Takeover(Module):
     Note:
         参数format可选格式有'txt', 'rst', 'csv', 'tsv', 'json', 'yaml', 'html',
                           'jira', 'xls', 'xlsx', 'dbf', 'latex', 'ods'
-        参数dpath为None默认使用OneForAll结果目录
+        参数path默认None使用OneForAll结果目录生成路径
 
-    :param str target:  单个子域或者每行一个子域的文件路径(必需参数)
+    :param any target:  单个子域或者每行一个子域的文件路径(必需参数)
     :param int thread:  线程数(默认100)
     :param str format:  导出格式(默认csv)
-    :param str dpath:   导出目录(默认None)
+    :param str path:    导出路径(默认None)
     """
-    def __init__(self, target, thread=100, dpath=None, format='csv'):
+    def __init__(self, target, thread=100, path=None, format='csv'):
         Module.__init__(self)
         self.subdomains = set()
         self.module = 'Check'
         self.source = 'Takeover'
         self.target = target
         self.thread = thread
-        self.dpath = dpath
+        self.path = path
         self.format = format
         self.fingerprints = None
         self.subdomainq = Queue()
@@ -78,17 +78,16 @@ class Takeover(Module):
         self.results = Dataset()
 
     def save(self):
-        logger.log('INFOR', '正在保存检查结果')
+        logger.log('DEBUG', '正在保存检查结果')
         if self.format == 'txt':
             data = str(self.results)
         else:
             data = self.results.export(self.format)
-        fpath = self.dpath.joinpath(f'takeover.{self.format}')
-        utils.save_data(fpath, data)
+        utils.save_data(self.path, data)
 
     def compare(self, subdomain, cname, responses):
         domain_resp = self.get('http://' + subdomain, check=False)
-        cname_resp = self.get('http://'+cname, check=False)
+        cname_resp = self.get('http://' + cname, check=False)
         if domain_resp is None or cname_resp is None:
             return
 
@@ -120,22 +119,24 @@ class Takeover(Module):
         # 设置进度
         bar = tqdm()
         bar.total = len(self.subdomains)
-        bar.desc = 'Progress'
-        bar.ncols = True
+        bar.desc = 'Check Progress'
+        bar.ncols = 80
         while True:
             done = bar.total - self.subdomainq.qsize()
             bar.n = done
             bar.update()
             if done == bar.total:  # 完成队列中所有子域的检查退出
                 break
-        bar.close()
+        # bar.close()
 
     def run(self):
         start = time.time()
         logger.log('INFOR', f'开始执行{self.source}模块')
-        self.format = utils.check_format(self.format)
-        self.dpath = utils.check_dpath(self.dpath)
         self.subdomains = utils.get_domains(self.target)
+        self.format = utils.check_format(self.format, len(self.subdomains))
+        timestamp = utils.get_timestamp()
+        name = f'takeover_check_result_{timestamp}'
+        self.path = utils.check_path(self.path, name, self.format)
         if self.subdomains:
             logger.log('INFOR', f'正在检查子域接管风险')
             self.fingerprints = get_fingerprint()
@@ -156,10 +157,11 @@ class Takeover(Module):
         else:
             logger.log('FATAL', f'获取域名失败')
         end = time.time()
-        elapsed = round(end - start, 1)
-        logger.log('INFOR', f'{self.source}模块耗时{elapsed}秒'
+        elapse = round(end - start, 1)
+        logger.log('INFOR', f'{self.source}模块耗时{elapse}秒'
                             f'发现{len(self.results)}个子域存在接管风险')
-        logger.log('DEBUG', f'结束执行{self.source}模块')
+        logger.log('INFOR', f'子域接管风险检查结果 {self.path}')
+        logger.log('INFOR', f'结束执行{self.source}模块')
 
 
 if __name__ == '__main__':

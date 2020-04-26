@@ -1,9 +1,8 @@
 import base64
 import time
 
-import config
+import api
 from common.search import Search
-from config import logger
 
 
 class FoFa(Search):
@@ -14,8 +13,8 @@ class FoFa(Search):
         self.source = 'FoFaAPISearch'
         self.addr = 'https://fofa.so/api/v1/search/all'
         self.delay = 1
-        self.email = config.fofa_api_email
-        self.key = config.fofa_api_key
+        self.email = api.fofa_api_email
+        self.key = api.fofa_api_key
 
     def search(self):
         """

@@ -9,11 +9,13 @@ OneForAll数据库导出模块
 """
 
 import fire
+
 from common import utils
 from common.database import Database
+from config import logger
 
 
-def export(table, db=None, valid=None, dpath=None, format='csv', show=False):
+def export(table, db=None, alive=False, limit=None, path=None, format='csv', show=False):
     """
     OneForAll数据库导出模块
 
@@ -22,36 +24,32 @@ def export(table, db=None, valid=None, dpath=None, format='csv', show=False):
         python3 dbexport.py --db result.db --table name --show False
 
     Note:
-        参数port可选值有'small', 'medium', 'large', 'xlarge'，详见config.py配置
+        参数alive可选值True，False分别表示导出存活，全部子域结果
         参数format可选格式有'txt', 'rst', 'csv', 'tsv', 'json', 'yaml', 'html',
                           'jira', 'xls', 'xlsx', 'dbf', 'latex', 'ods'
-        参数dpath为None默认使用OneForAll结果目录
+        参数path默认None使用OneForAll结果目录自动生成路径
 
     :param str table:   要导出的表
     :param str db:      要导出的数据库路径(默认为results/result.sqlite3)
-    :param int valid:   导出子域的有效性(默认None)
-    :param str format:  导出格式(默认xls)
-    :param str dpath:    导出目录(默认None)
+    :param bool alive:  只导出存活的子域结果(默认False)
+    :param str limit:   导出限制条件(默认None)
+    :param str format:  导出文件格式(默认csv)
+    :param str path:    导出文件路径(默认None)
     :param bool show:   终端显示导出数据(默认False)
     """
-    format = utils.check_format(format)
-    dpath = utils.check_dpath(dpath)
+
     database = Database(db)
-    if valid is None:
-        rows = database.get_data(table)
-    elif isinstance(valid, int):
-        rows = database.get_subdomain(table, valid)
-    else:
-        rows = database.get_data(table)  # 意外情况导出全部子域
+    rows = database.export_data(table, alive, limit)
+    format = utils.check_format(format, len(rows))
+    path = utils.check_path(path, table, format)
     if show:
         print(rows.dataset)
-    if format == 'txt':
-        data = str(rows.dataset)
-    else:
-        data = rows.export(format)
+    data = rows.export(format)
     database.close()
-    fpath = dpath.joinpath(f'{table}.{format}')
-    utils.save_data(fpath, data)
+    utils.save_data(path, data)
+    logger.log('INFOR', f'{table}主域的子域结果 {path}')
+    data_dict = rows.as_dict()
+    return data_dict
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 import time
-import config
+import api
 from common.search import Search
 from config import logger
 
@@ -12,8 +12,8 @@ class ZoomEyeAPI(Search):
         self.source = 'ZoomEyeAPISearch'
         self.addr = 'https://api.zoomeye.org/web/search'
         self.delay = 2
-        self.user = config.zoomeye_api_username
-        self.pwd = config.zoomeye_api_password
+        self.user = api.zoomeye_api_usermail
+        self.pwd = api.zoomeye_api_password
 
     def login(self):
         """
@@ -24,7 +24,7 @@ class ZoomEyeAPI(Search):
         resp = self.post(url=url, json=data)
         if not resp:
             logger.log('FATAL', f'登录失败无法获取{self.source}的访问token')
-            return
+            exit(1)
         data = resp.json()
         if resp.status_code == 200:
             logger.log('DEBUG', f'{self.source}模块登录成功')
@@ -83,4 +83,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    do('mi.com')

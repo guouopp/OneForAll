@@ -1,6 +1,7 @@
 import time
 import threading
 import importlib
+
 import config
 import dbexport
 from config import logger
@@ -12,9 +13,9 @@ class Collect(object):
     """
     def __init__(self, domain, export=True):
         self.domain = domain
-        self.elapsed = 0.0
+        self.elapse = 0.0
         self.modules = []
-        self.collect_func = []
+        self.collect_funcs = []
         self.path = None
         self.export = export
         self.format = 'csv'
@@ -31,7 +32,7 @@ class Collect(object):
                        'dnsquery', 'intelligence', 'search']
             # modules = ['intelligence']  # crawl模块还有点问题
             for module in modules:
-                module_path = config.oneforall_module_path.joinpath(module)
+                module_path = config.module_dir.joinpath(module)
                 for path in module_path.rglob('*.py'):
                     # 需要导入的类
                     import_module = ('modules.' + module, path.stem)
@@ -44,8 +45,9 @@ class Collect(object):
         导入脚本的do函数
         """
         for package, name in self.modules:
-            import_object = importlib.import_module('.'+name, package)
-            self.collect_func.append(getattr(import_object, 'do'))
+            import_object = importlib.import_module('.' + name, package)
+            func = getattr(import_object, 'do')
+            self.collect_funcs.append([func, name])
 
     def run(self):
         """
@@ -58,8 +60,10 @@ class Collect(object):
 
         threads = []
         # 创建多个子域收集线程
-        for collect_func in self.collect_func:
-            thread = threading.Thread(target=collect_func,
+        for collect_func in self.collect_funcs:
+            func_obj, func_name = collect_func
+            thread = threading.Thread(target=func_obj,
+                                      name=func_name,
                                       args=(self.domain,),
                                       daemon=True)
             threads.append(thread)
@@ -68,18 +72,24 @@ class Collect(object):
             thread.start()
         # 等待所有线程完成
         for thread in threads:
-            thread.join()
+            # 挨个线程判断超时 最坏情况主线程阻塞时间=线程数*module_thread_timeout
+            # 超时线程将脱离主线程 由于创建线程时已添加守护属于 所有超时线程会随着主线程结束
+            thread.join(config.module_thread_timeout)
+
+        for thread in threads:
+            if thread.is_alive():
+                logger.log('ALERT', f'{thread.name}模块线程发生超时')
 
         # 数据库导出
         if self.export:
             if not self.path:
                 name = f'{self.domain}.{self.format}'
-                self.path = config.result_save_path.joinpath(name)
-            dbexport.export(self.domain, dpath=self.path, format=self.format)
+                self.path = config.result_save_dir.joinpath(name)
+            dbexport.export(self.domain, path=self.path, format=self.format)
         end = time.time()
-        self.elapsed = round(end - start, 1)
+        self.elapse = round(end - start, 1)
 
 
 if __name__ == '__main__':
-    a = Collect('example.com')
-    a.run()
+    collect = Collect('example.com')
+    collect.run()

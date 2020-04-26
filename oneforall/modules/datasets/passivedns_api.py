@@ -1,5 +1,4 @@
-import time
-import config
+import api
 from common.query import Query
 
 
@@ -9,14 +8,13 @@ class PassiveDnsAPI(Query):
         self.domain = self.register(domain)
         self.module = 'Dataset'
         self.source = 'PassiveDnsQuery'
-        self.addr = config.passivedns_api_addr or 'http://api.passivedns.cn'
-        self.token = config.passivedns_api_token
+        self.addr = api.passivedns_api_addr or 'http://api.passivedns.cn'
+        self.token = api.passivedns_api_token
 
     def query(self):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.header.update({'X-AuthToken': self.token})
         self.proxy = self.get_proxy(self.source)

@@ -1,5 +1,4 @@
-import time
-import config
+import api
 from common import utils
 from common.query import Query
 
@@ -11,13 +10,12 @@ class DNSdbAPI(Query):
         self.module = 'Dataset'
         self.source = 'DNSdbAPIQuery'
         self.addr = 'https://api.dnsdb.info/lookup/rrset/name/'
-        self.api = config.dnsdb_api_key
+        self.api = api.dnsdb_api_key
 
     def query(self):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.header.update({'X-API-Key': self.api})
         self.proxy = self.get_proxy(self.source)

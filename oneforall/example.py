@@ -7,5 +7,9 @@
 
 import oneforall
 
-test = oneforall.OneForAll(target='example.com')
-test.run()
+if __name__ == '__main__':
+    test = oneforall.OneForAll(target='github.com')
+    test.brute = True
+    test.takeover = True
+    test.run()
+    result = test.datas
