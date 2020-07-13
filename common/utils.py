@@ -55,7 +55,6 @@ def gen_fake_header():
         'Accept-Encoding': 'gzip, deflate',
         'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
         'Cache-Control': 'max-age=0',
-        'Connection': 'close',
         'DNT': '1',
         'Referer': 'https://www.google.com/',
         'Upgrade-Insecure-Requests': '1',
@@ -226,8 +225,7 @@ def save_data(path, data):
     :return: 保存成功与否
     """
     try:
-        with open(path, 'w', encoding="utf-8",
-                  errors='ignore', newline='') as file:
+        with open(path, 'w', errors='ignore', newline='') as file:
             file.write(data)
             return True
     except TypeError:
@@ -541,13 +539,15 @@ def check_pre():
         exit(1)
     if system == 'Windows' and implementation == 'CPython':
         if version < '3.8':
-            logger.log('FATAL', 'OneForAll requires Python 3.8 or higher when running on Windows')
+            logger.log('FATAL', 'OneForAll requires Python 3.8 '
+                                'or higher when running on Windows')
             exit(1)
     if system in {"Linux", "Darwin"}:
         try:
             import uvloop
         except ImportError:
-            logger.log('ALERT', f'Please install the uvloop library manually to accelerate subdomain requests')
+            logger.log('ALERT', f'Please install the uvloop library manually '
+                                f'to accelerate subdomain requests')
 
 
 def check_env():
@@ -579,8 +579,10 @@ def check_version(local):
         return
     if latest > local:
         change = json.get("body")
-        logger.log('ALERT', f'The current version is {local} but the latest version is {latest}')
-        logger.log('ALERT', f'The {latest} version mainly has the following changes\n{change}')
+        logger.log('ALERT', f'The current version is {local} '
+                            f'but the latest version is {latest}')
+        logger.log('ALERT', f'The {latest} version mainly has the following changes')
+        logger.log('ALERT', change)
     else:
         logger.log('INFOR', f'The current version {local} is already the latest version')
 
@@ -592,7 +594,7 @@ def get_maindomain(domain):
 def call_massdns(massdns_path, dict_path, ns_path, output_path, log_path,
                  query_type='A', process_num=1, concurrent_num=10000,
                  quiet_mode=False):
-    logger.log('DEBUG', f'Start running massdns')
+    logger.log('DEBUG', 'Start running massdns')
     quiet = ''
     if quiet_mode:
         quiet = '--quiet'
@@ -627,7 +629,8 @@ def get_massdns_path(massdns_dir):
     path.chmod(S_IXUSR)
     if not path.exists():
         logger.log('FATAL', 'There is no massdns for this platform or architecture')
-        logger.log('INFOR', 'Please try to compile massdns yourself and specify the path in the configuration')
+        logger.log('INFOR', 'Please try to compile massdns yourself '
+                            'and specify the path in the configuration')
         exit(0)
     return path
 
@@ -638,3 +641,12 @@ def is_subname(name):
         if char not in chars:
             return False
     return True
+
+
+def ip_to_int(ip):
+    try:
+        ipv4 = IPv4Address(ip)
+    except Exception as e:
+        logger.log('ERROR', e.args)
+        return None
+    return int(ipv4)

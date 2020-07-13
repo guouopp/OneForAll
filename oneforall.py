@@ -129,7 +129,7 @@ class OneForAll(object):
         :rtype: list
         """
         db = Database()
-        data = dbexport.export(table, alive=self.alive, format=self.format)
+        data = dbexport.export(table, type='table', alive=self.alive, format=self.format)
         db.drop_table(self.new_table)
         db.rename_table(self.domain, self.new_table)
         db.close()
@@ -237,7 +237,7 @@ class OneForAll(object):
             utils.check_version(version)
         logger.log('DEBUG', 'Python ' + utils.python_version())
         logger.log('DEBUG', 'OneForAll ' + version)
-        logger.log('INFOR', f'Start running OneForAll')
+        logger.log('INFOR', 'Start running OneForAll')
         self.config()
         self.domains = utils.get_domains(self.target)
         if self.domains:
@@ -245,8 +245,8 @@ class OneForAll(object):
                 self.main()
             utils.export_all(self.alive, self.format, self.path, self.datas)
         else:
-            logger.log('FATAL', f'Failed to obtain domain')
-        logger.log('INFOR', f'Finished OneForAll')
+            logger.log('FATAL', 'Failed to obtain domain')
+        logger.log('INFOR', 'Finished OneForAll')
 
     @staticmethod
     def version():
