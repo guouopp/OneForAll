@@ -12,11 +12,13 @@ module_dir = relative_directory.joinpath('modules')  # OneForAll模块目录
 third_party_dir = relative_directory.joinpath('thirdparty')  # 三方工具目录
 data_storage_dir = relative_directory.joinpath('data')  # 数据存放目录
 result_save_dir = relative_directory.joinpath('results')  # 结果保存目录
+temp_save_dir = result_save_dir.joinpath('temp')
 
 # OneForAll入口参数设置
 enable_check_version = True  # 开启最新版本检查
 enable_dns_resolve = True  # 使用DNS解析子域(默认True)
 enable_http_request = True  # 使用HTTP请求子域(默认True)
+enable_finder_module = True  # 开启finder模块(默认True)
 enable_takeover_check = False  # 开启子域接管风险检查(默认False)
 # 参数port可选值有'default', 'small', 'large'
 http_request_port = 'default'  # HTTP请求子域(默认'default'，探测80端口)
@@ -45,7 +47,7 @@ brute_massdns_path = None  # 默认None自动选择 如需填写请填写绝对�
 brute_status_format = 'ansi'  # 爆破时状态输出格式（默认asni，可选json）
 # 爆破时使用的进程数(根据计算机中CPU数量情况设置 不宜大于逻辑CPU个数)
 brute_process_num = 1  # 默认1
-brute_concurrent_num = 10000  # 并发查询数量(默认10000)
+brute_concurrent_num = 2000  # 并发查询数量(默认2000，最大推荐10000)
 brute_socket_num = 1  # 爆破时每个进程下的socket数量
 brute_resolve_num = 50  # 解析失败时尝试换名称服务器重查次数
 # 爆破所使用的字典路径 默认data/subdomains.txt

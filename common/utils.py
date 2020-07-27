@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import sys
@@ -17,6 +18,7 @@ from records import Record, RecordCollection
 from dns.resolver import Resolver
 
 from common.domain import Domain
+from common.database import Database
 from config import setting
 from config.log import logger
 
@@ -48,7 +50,6 @@ def gen_fake_header():
     Generate fake request headers
     """
     ua = random.choice(user_agents)
-    ip = gen_random_ip()
     headers = {
         'Accept': 'text/html,application/xhtml+xml,'
                   'application/xml;q=0.9,*/*;q=0.8',
@@ -59,8 +60,7 @@ def gen_fake_header():
         'Referer': 'https://www.google.com/',
         'Upgrade-Insecure-Requests': '1',
         'User-Agent': ua,
-        'X-Forwarded-For': ip,
-        'X-Real-IP': ip
+        'X-Forwarded-For': '127.0.0.1'
     }
     return headers
 
@@ -216,6 +216,26 @@ def check_format(format, count):
         return 'csv'
 
 
+def load_json(path):
+    with open(path) as fp:
+        return json.load(fp)
+
+
+def save_db(name, data, module):
+    """
+    Save request results to database
+
+    :param str  name: table name
+    :param list data: data to be saved
+    :param str module: module name
+    """
+    db = Database()
+    db.drop_table(name)
+    db.create_table(name)
+    db.save_db(name, data, module)
+    db.close()
+
+
 def save_data(path, data):
     """
     保存数据到文件
@@ -235,6 +255,21 @@ def save_data(path, data):
     except Exception as e:
         logger.log('ERROR', e.args)
         return False
+
+
+def remove_data(path):
+    """
+    删除保存数据的文件
+
+    :param path: 路径
+    :return: 删除成功与否
+    """
+    try:
+        path.unlink()
+    except Exception as e:
+        logger.log('ERROR', e.args)
+        return False
+    return True
 
 
 def check_response(method, resp):
@@ -650,3 +685,40 @@ def ip_to_int(ip):
         logger.log('ERROR', e.args)
         return None
     return int(ipv4)
+
+
+def match_subdomains(domain, html, distinct=True, fuzzy=True):
+    """
+    Use regexp to match subdomains
+
+    :param  str domain: main domain
+    :param  str html: response html text
+    :param  bool distinct: deduplicate results or not (default True)
+    :param  bool fuzzy: fuzzy match subdomain or not (default True)
+    :return set/list: result set or list
+    """
+    logger.log('TRACE', f'Use regexp to match subdomains in the response body')
+    if fuzzy:
+        regexp = r'(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.){0,}' \
+                 + domain.replace('.', r'\.')
+        result = re.findall(regexp, html, re.I)
+        if not result:
+            return set()
+        deal = map(lambda s: s.lower(), result)
+        if distinct:
+            return set(deal)
+        else:
+            return list(deal)
+    else:
+        regexp = r'(?:\>|\"|\'|\=|\,)(?:http\:\/\/|https\:\/\/)?' \
+                 r'(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.){0,}' \
+                 + domain.replace('.', r'\.')
+        result = re.findall(regexp, html, re.I)
+    if not result:
+        return set()
+    regexp = r'(?:http://|https://)'
+    deal = map(lambda s: re.sub(regexp, '', s[1:].lower()), result)
+    if distinct:
+        return set(deal)
+    else:
+        return list(deal)
