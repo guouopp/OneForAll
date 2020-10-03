@@ -1,11 +1,10 @@
-from common import utils
 from common.query import Query
 
 
 class DNSdumpster(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = "DNSdumpsterQuery"
         self.addr = 'https://dnsdumpster.com/'
@@ -24,12 +23,7 @@ class DNSdumpster(Query):
         data = {'csrfmiddlewaretoken': self.cookie.get('csrftoken'),
                 'targetip': self.domain}
         resp = self.post(self.addr, data)
-        if not resp:
-            return
-        subdomains = self.match_subdomains(resp.text)
-        if subdomains:
-            # 合并搜索子域名搜索结果
-            self.subdomains = self.subdomains.union(subdomains)
+        self.subdomains = self.collect_subdomains(resp)
 
     def run(self):
         """
@@ -43,7 +37,7 @@ class DNSdumpster(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -55,4 +49,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 if __name__ == '__main__':
 
-    do('example.com')
+    run('example.com')

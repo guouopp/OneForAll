@@ -1,15 +1,15 @@
-from config import api
+from config import settings
 from common.query import Query
 
 
 class SecurityTrailsAPI(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = 'SecurityTrailsAPIQuery'
         self.addr = 'https://api.securitytrails.com/v1/domain/'
-        self.api = api.securitytrails_api
+        self.api = settings.securitytrails_api
         self.delay = 2  # SecurityTrails查询时延至少2秒
 
     def query(self):
@@ -26,14 +26,13 @@ class SecurityTrailsAPI(Query):
         prefixs = resp.json()['subdomains']
         subdomains = [f'{prefix}.{self.domain}' for prefix in prefixs]
         if subdomains:
-            # 合并搜索子域名搜索结果
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
 
     def run(self):
         """
         类执行入口
         """
-        if not self.check(self.api):
+        if not self.have_api(self.api):
             return
         self.begin()
         self.query()
@@ -43,7 +42,7 @@ class SecurityTrailsAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -54,4 +53,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

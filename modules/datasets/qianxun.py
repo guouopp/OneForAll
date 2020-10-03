@@ -25,10 +25,10 @@ class QianXun(Query):
             url = f'https://www.dnsscan.cn/dns.html?' \
                   f'keywords={self.domain}&page={num}'
             resp = self.post(url, data)
-            if not resp:
+            subdomains = self.match_subdomains(resp)
+            if not subdomains:  # 没有发现子域名则停止查询
                 break
-            subdomains = self.match_subdomains(resp.text)
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
             if '<div id="page" class="pagelist">' not in resp.text:
                 break
             if '<li class="disabled"><span>&raquo;</span></li>' in resp.text:
@@ -47,7 +47,7 @@ class QianXun(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -58,4 +58,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

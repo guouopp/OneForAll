@@ -1,6 +1,6 @@
 import re
-import tldextract
-from config import setting
+from common import tldextract
+from config import settings
 
 
 class Domain(object):
@@ -9,7 +9,6 @@ class Domain(object):
 
     :param str string: input string
     """
-
     def __init__(self, string):
         self.string = str(string)
         self.regexp = r'\b((?=[a-z0-9-]{1,63}\.)(xn--)?[a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,63}\b'
@@ -24,8 +23,7 @@ class Domain(object):
         result = re.search(self.regexp, self.string, re.I)
         if result:
             return result.group()
-        else:
-            return None
+        return None
 
     def extract(self):
         """
@@ -38,14 +36,13 @@ class Domain(object):
 
         :return: extracted domain results
         """
-        data_storage_dir = setting.data_storage_dir
+        data_storage_dir = settings.data_storage_dir
         extract_cache_file = data_storage_dir.joinpath('public_suffix_list.dat')
-        tldext = tldextract.TLDExtract(extract_cache_file, None)
+        ext = tldextract.TLDExtract(extract_cache_file)
         result = self.match()
         if result:
-            return tldext(result)
-        else:
-            return None
+            return ext(result)
+        return None
 
     def registered(self):
         """
@@ -61,5 +58,4 @@ class Domain(object):
         result = self.extract()
         if result:
             return result.registered_domain
-        else:
-            return None
+        return None

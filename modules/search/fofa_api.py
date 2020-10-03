@@ -1,7 +1,7 @@
 import base64
 import time
 
-from config import api
+from config import settings
 from common.search import Search
 
 
@@ -13,8 +13,8 @@ class FoFa(Search):
         self.source = 'FoFaAPISearch'
         self.addr = 'https://fofa.so/api/v1/search/all'
         self.delay = 1
-        self.email = api.fofa_api_email
-        self.key = api.fofa_api_key
+        self.email = settings.fofa_api_email
+        self.key = settings.fofa_api_key
 
     def search(self):
         """
@@ -32,17 +32,17 @@ class FoFa(Search):
                      'qbase64': query_data,
                      'page': self.page_num,
                      'full': 'true',
-                     'size': 10000}
+                     'size': 5000}
             resp = self.get(self.addr, query)
             if not resp:
                 return
             resp_json = resp.json()
-            subdomains = self.match_subdomains(resp.text)
+            subdomains = self.match_subdomains(resp)
             if not subdomains:  # 搜索没有发现子域名则停止搜索
                 break
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
             size = resp_json.get('size')
-            if size < 10000:
+            if size < 5000:
                 break
             self.page_num += 1
 
@@ -50,7 +50,7 @@ class FoFa(Search):
         """
         类执行入口
         """
-        if not self.check(self.email, self.key):
+        if not self.have_api(self.email, self.key):
             return
         self.begin()
         self.search()
@@ -60,7 +60,7 @@ class FoFa(Search):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -71,4 +71,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

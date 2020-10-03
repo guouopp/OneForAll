@@ -26,10 +26,8 @@ class ArchiveCrawl(Crawl):
         for resp in cdx.iter(url, limit=limit):
             if resp.data.get('status') not in ['301', '302']:
                 url = resp.data.get('url')
-                subdomains = self.match_subdomains(self.get_maindomain(domain),
-                                                   url + resp.text)
-                # 合并搜索子域名搜索结果
-                self.subdomains = self.subdomains.union(subdomains)
+                subdomains = self.match_subdomains(domain, url + resp.text)
+                self.subdomains.update(subdomains)
 
     def run(self):
         """
@@ -47,7 +45,7 @@ class ArchiveCrawl(Crawl):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -58,4 +56,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

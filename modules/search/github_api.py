@@ -1,5 +1,5 @@
 import requests
-from config import api
+from config import settings
 from common.search import Search
 from config.log import logger
 
@@ -10,10 +10,11 @@ class GithubAPI(Search):
         self.source = 'GithubAPISearch'
         self.module = 'Search'
         self.addr = 'https://api.github.com/search/code'
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.session = requests.Session()
+        self.session.trust_env = False
         self.auth_url = 'https://api.github.com'
-        self.token = api.github_api_token
+        self.token = settings.github_api_token
 
     def auth_github(self):
         """
@@ -32,8 +33,7 @@ class GithubAPI(Search):
             msg = resp_json.get('message')
             logger.log('ERROR', msg)
             return False
-        else:
-            return True
+        return True
 
     def search(self):
         """
@@ -60,10 +60,10 @@ class GithubAPI(Search):
             if resp.status_code != 200:
                 logger.log('ERROR', f'{self.source} module query failed')
                 break
-            subdomains = self.match_subdomains(resp.text)
+            subdomains = self.match_subdomains(resp)
             if not subdomains:
                 break
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
             page += 1
             try:
                 resp_json = resp.json()
@@ -82,7 +82,7 @@ class GithubAPI(Search):
         """
         类执行入口
         """
-        if not self.check(self.token):
+        if not self.have_api(self.token):
             return
         self.begin()
         self.search()
@@ -92,7 +92,7 @@ class GithubAPI(Search):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -103,4 +103,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('exmaple.com')
+    run('example.com')

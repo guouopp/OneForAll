@@ -10,8 +10,7 @@ class VirusTotal(Query):
         Query.__init__(self)
         self.source = 'VirusTotalQuery'
         self.module = 'Intelligence'
-        self.addr = 'https://www.virustotal.com/ui/domains/{}/subdomains'
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
 
     def query(self):
         """
@@ -24,26 +23,16 @@ class VirusTotal(Query):
                                 'TE': 'Trailers'})
             self.proxy = self.get_proxy(self.source)
             params = {'limit': '40', 'cursor': next_cursor}
-            resp = self.get(url=self.addr.format(self.domain), params=params)
+            addr = f'https://www.virustotal.com/ui/domains/{self.domain}/subdomains'
+            resp = self.get(url=addr, params=params)
             if not resp:
-                return
+                break
+            subdomains = self.match_subdomains(resp)
+            if not subdomains:
+                break
+            self.subdomains.update(subdomains)
             data = resp.json()
-            subdomains = set()
-            datas = data.get('data')
-
-            if datas:
-                for data in datas:
-                    subdomain = data.get('id')
-                    if subdomain:
-                        subdomains.add(subdomain)
-            else:
-                break
-            self.subdomains = self.subdomains.union(subdomains)
-            meta = data.get('meta')
-            if meta:
-                next_cursor = meta.get('cursor')
-            else:
-                break
+            next_cursor = data.get('meta').get('cursor')
 
     def run(self):
         """
@@ -57,7 +46,7 @@ class VirusTotal(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -68,4 +57,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('mi.com')

@@ -5,7 +5,7 @@ from common.query import Query
 class SiteDossier(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = 'SiteDossierQuery'
         self.addr = 'http://www.sitedossier.com/parentdomain/'
@@ -22,13 +22,10 @@ class SiteDossier(Query):
             self.proxy = self.get_proxy(self.source)
             url = f'{self.addr}{self.domain}/{self.page_num}'
             resp = self.get(url)
-            if not resp:
-                return
-            subdomains = self.match_subdomains(resp.text)
-            if not subdomains:  # 搜索没有发现子域名则停止搜索
+            subdomains = self.match_subdomains(resp)
+            if not subdomains:  # 没有发现子域名则停止查询
                 break
-            # 合并搜索子域名搜索结果
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
             # 搜索页面没有出现下一页时停止搜索
             if 'Show next 100 items' not in resp.text:
                 break
@@ -46,7 +43,7 @@ class SiteDossier(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -57,4 +54,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

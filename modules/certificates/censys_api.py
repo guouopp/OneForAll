@@ -1,4 +1,4 @@
-from config import api
+from config import settings
 from common.query import Query
 from config.log import logger
 
@@ -6,12 +6,12 @@ from config.log import logger
 class CensysAPI(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Certificate'
         self.source = "CensysAPIQuery"
         self.addr = 'https://www.censys.io/api/v1/search/certificates'
-        self.id = api.censys_api_id
-        self.secret = api.censys_api_secret
+        self.id = settings.censys_api_id
+        self.secret = settings.censys_api_secret
         self.delay = 3.0  # Censys 接口查询速率限制 最快2.5秒查1次
 
     def query(self):
@@ -34,21 +34,18 @@ class CensysAPI(Query):
             logger.log('ALERT', f'{self.source} module {status}')
             return
         subdomains = self.match_subdomains(resp.text)
-        self.subdomains = self.subdomains.union(subdomains)
+        self.subdomains.update(subdomains)
         pages = json.get('metadata').get('pages')
         for page in range(2, pages + 1):
             data['page'] = page
             resp = self.post(self.addr, json=data, auth=(self.id, self.secret))
-            if not resp:
-                return
-            subdomains = self.match_subdomains(resp.text)
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains = self.collect_subdomains(resp)
 
     def run(self):
         """
         类执行入口
         """
-        if not self.check(self.id, self.secret):
+        if not self.have_api(self.id, self.secret):
             return
         self.begin()
         self.query()
@@ -58,7 +55,7 @@ class CensysAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -69,4 +66,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

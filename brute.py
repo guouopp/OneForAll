@@ -10,7 +10,6 @@ OneForAll subdomain brute module
 import gc
 import json
 import time
-import random
 import secrets
 
 import exrex
@@ -21,101 +20,148 @@ from dns.resolver import NXDOMAIN, YXDOMAIN, NoAnswer, NoNameservers
 
 import dbexport
 from common import utils
-from config import setting
+from common import similarity
+from config import settings
 from common.module import Module
 from config.log import logger
 
 
-@tenacity.retry(stop=tenacity.stop_after_attempt(3))
-def do_query_a(domain, resolver):
+def config_resolver(nameservers):
+    """
+    配置DNS解析器
+
+    :param nameservers: 名称解析服务器地址
+    """
+    resolver = utils.dns_resolver()
+    resolver.nameservers = nameservers
+    resolver.rotate = True  # 随机使用NS
+    resolver.cache = None  # 不使用DNS缓存
+    return resolver
+
+
+def gen_random_subdomains(domain, count):
+    """
+    生成指定数量的随机子域域名列表
+
+    :param domain: 主域
+    :param count: 数量
+    """
+    subdomains = set()
+    if count < 1:
+        return subdomains
+    for _ in range(count):
+        token = secrets.token_hex(4)
+        subdomains.add(f'{token}.{domain}')
+    return subdomains
+
+
+def query_a_record(subdomain, resolver):
+    """
+    查询子域A记录
+
+    :param subdomain: 子域
+    :param resolver: DNS解析器
+    """
     try:
-        answer = resolver.query(domain, 'A')
-    # If resolve random subdomain raise timeout error, try again
-    except Timeout as e:
-        logger.log('ALERT', f'DNS resolve timeout, retrying')
-        logger.log('DEBUG', e.args)
-        raise tenacity.TryAgain
-    # If resolve random subdomain raise NXDOMAIN, YXDOMAIN, NoAnswer, NoNameservers error
-    # It means that there is no A record of random subdomain and not use wildcard dns record
-    except (NXDOMAIN, YXDOMAIN, NoAnswer, NoNameservers) as e:
-        logger.log('DEBUG', e.args)
-        logger.log('INFOR', f'{domain} seems not use wildcard dns record')
-        return False
+        answer = resolver.query(subdomain, 'A')
     except Exception as e:
-        logger.log('ALERT', f'Detect {domain} wildcard dns record error')
-        logger.log('FATAL', e.args)
-        exit(1)
-    else:
-        if answer.rrset is None:
-            logger.log('ALERT', f'DNS resolve dont have result, retrying')
-            raise tenacity.TryAgain
-        ttl = answer.ttl
-        name = answer.name
-        ips = {item.address for item in answer}
-        logger.log('ALERT', f'{domain} use wildcard dns record')
-        logger.log('ALERT', f'{domain} resolve to: {name} '
-                            f'IP: {ips} TTL: {ttl}')
+        logger.log('DEBUG', f'Query {subdomain} wildcard dns record error')
+        logger.log('DEBUG', e.args)
+        return False
+    if answer.rrset is None:
+        return False
+    ttl = answer.ttl
+    name = answer.name
+    ips = {item.address for item in answer}
+    logger.log('ALERT', f'{subdomain} resolve to: {name} '
+                        f'IP: {ips} TTL: {ttl}')
+    return True
+
+
+def all_resolve_success(subdomains):
+    """
+    判断是否所有子域都解析成功
+
+    :param subdomains: 子域列表
+    """
+    resolver = utils.dns_resolver()
+    resolver.cache = None  # 不使用DNS缓存
+    status = set()
+    for subdomain in subdomains:
+        status.add(query_a_record(subdomain, resolver))
+    return all(status)
+
+
+def all_request_success(subdomains):
+    """
+    判断是否所有子域都请求成功
+
+    :param subdomains: 子域列表
+    """
+    result = list()
+    for subdomain in subdomains:
+        url = f'http://{subdomain}'
+        resp = utils.get_url_resp(url)
+        if resp:
+            logger.log('ALERT', f'Request: {url} Status: {resp.status_code} '
+                                f'Size: {len(resp.content)}')
+            result.append(resp.text)
+        else:
+            result.append(resp)
+    return all(result), result
+
+
+def any_similar_html(resp_list):
+    """
+    判断是否有一组HTML页面结构相似
+
+    :param resp_list: 响应HTML页面
+    """
+    html_doc1, html_doc2, html_doc3 = resp_list
+    if similarity.is_similar(html_doc1, html_doc2):
         return True
+    if similarity.is_similar(html_doc1, html_doc3):
+        return True
+    if similarity.is_similar(html_doc2, html_doc3):
+        return True
+    return False
 
 
-def detect_wildcard(domain, authoritative_ns):
+def detect_wildcard(domain):
     """
     Detect use wildcard dns record or not
 
     :param  str  domain:  domain
-    :param  list authoritative_ns: authoritative name server
     :return bool use wildcard dns record or not
     """
     logger.log('INFOR', f'Detecting {domain} use wildcard dns record or not')
-    token = secrets.token_hex(4)
-    random_subdomain = f'{token}.{domain}'
-    resolver = utils.dns_resolver()
-    resolver.nameservers = authoritative_ns
-    resolver.rotate = True
-    resolver.cache = None
-    try:
-        wildcard = do_query_a(random_subdomain, resolver)
-    except Exception as e:
-        logger.log('DEBUG', e.args)
-        logger.log('ALERT', f'Multiple detection errors, so temporarily {domain} does not use wildcard dns record')
+    random_subdomains = gen_random_subdomains(domain, 3)
+    if not all_resolve_success(random_subdomains):
         return False
+    is_all_success, all_request_resp = all_request_success(random_subdomains)
+    if not is_all_success:
+        return True
+    return any_similar_html(all_request_resp)
+
+
+def is_enable_wildcard(domain):
+    is_enable = detect_wildcard(domain)
+    if is_enable:
+        logger.log('ALERT', f'The domain {domain} enables wildcard')
     else:
-        return wildcard
+        logger.log('ALERT', f'The domain {domain} disables wildcard')
+    return is_enable
 
 
-def gen_fuzz_subdomains(expression, rule):
+def gen_subdomains(expression, path):
     """
-    Generate subdomains based on fuzz mode
-
-    :param  str  expression: generate subdomains's expression
-    :param  str  rule: regexp rule
-    :return list subdomains: list of subdomains
-    """
-    subdomains = list()
-    fuzz_count = exrex.count(rule)
-    if fuzz_count > 10000000:
-        logger.log('ALERT', f'The dictionary generated by this rule is too large：{fuzz_count} > 10000000')
-    logger.log('DEBUG', f'Dictionary size based on fuzz mode: {fuzz_count}')
-    for fuzz_string in exrex.generate(rule):
-        fuzz_string = fuzz_string.lower()
-        if not fuzz_string.isalnum():
-            continue
-        fuzz_domain = expression.replace('*', fuzz_string)
-        subdomains.append(fuzz_domain)
-    random_domain = random.choice(subdomains)
-    logger.log('ALERT', f'Please check whether {random_domain} is correct or not')
-    return subdomains
-
-
-def gen_word_subdomains(expression, path):
-    """
-    Generate subdomains based on word mode
+    Generate subdomains
 
     :param  str  expression: generate subdomains's expression
     :param  str  path: path of wordlist
-    :return list subdomains: list of subdomains
+    :return set  subdomains: list of subdomains
     """
-    subdomains = list()
+    subdomains = set()
     with open(path, encoding='utf-8', errors='ignore') as fd:
         for line in fd:
             word = line.strip().lower()
@@ -128,10 +174,55 @@ def gen_word_subdomains(expression, path):
             if word.endswith('.'):
                 word = word[:-1]
             subdomain = expression.replace('*', word)
-            subdomains.append(subdomain)
-    random_domain = random.choice(subdomains)
+            subdomains.add(subdomain)
+    size = len(subdomains)
+    logger.log('DEBUG', f'The size of the dictionary generated by {path} is {size}')
+    if size == 0:
+        logger.log('ALERT', 'Please check the dictionary content!')
+    else:
+        utils.check_random_subdomain(subdomains)
+    return subdomains
+
+
+def gen_fuzz_subdomains(expression, rule, fuzzlist):
+    """
+    Generate subdomains based on fuzz mode
+
+    :param  str  expression: generate subdomains's expression
+    :param  str  rule: regexp rule
+    :param  str  fuzzlist: fuzz dictionary
+    :return set  subdomains: list of subdomains
+    """
+    subdomains = set()
+    if fuzzlist:
+        fuzz_domain = gen_subdomains(expression, fuzzlist)
+        subdomains.update(fuzz_domain)
+    if rule:
+        fuzz_count = exrex.count(rule)
+        if fuzz_count > 10000000:
+            logger.log('ALERT', f'The dictionary generated by this rule is too large: '
+                                f'{fuzz_count} > 10000000')
+        for fuzz_string in exrex.generate(rule):
+            fuzz_string = fuzz_string.lower()
+            if not fuzz_string.isalnum():
+                continue
+            fuzz_domain = expression.replace('*', fuzz_string)
+            subdomains.add(fuzz_domain)
+        utils.check_random_subdomain(subdomains)
+    logger.log('DEBUG', f'Dictionary size based on fuzz mode: {len(subdomains)}')
+    return subdomains
+
+
+def gen_word_subdomains(expression, path):
+    """
+    Generate subdomains based on word mode
+
+    :param  str  expression: generate subdomains's expression
+    :param  str  path: path of wordlist
+    :return set  subdomains: list of subdomains
+    """
+    subdomains = gen_subdomains(expression, path)
     logger.log('DEBUG', f'Dictionary based on word mode size: {len(subdomains)}')
-    logger.log('ALERT', f'Please check whether {random_domain} is correct or not')
     return subdomains
 
 
@@ -157,7 +248,7 @@ def query_domain_ns_a(ns_list):
 
 def query_domain_ns(domain):
     logger.log('INFOR', f'Querying NS records of {domain}')
-    domain = utils.get_maindomain(domain)
+    domain = utils.get_main_domain(domain)
     resolver = utils.dns_resolver()
     try:
         answer = resolver.query(domain, 'NS')
@@ -172,7 +263,8 @@ def query_domain_ns(domain):
 
 @tenacity.retry(stop=tenacity.stop_after_attempt(2))
 def get_wildcard_record(domain, resolver):
-    logger.log('INFOR', f'Query {domain} \'s wildcard dns record in authoritative name server')
+    logger.log('INFOR', f"Query {domain} 's wildcard dns record "
+                        f"in authoritative name server")
     try:
         answer = resolver.query(domain, 'A')
     # 如果查询随机域名A记录时抛出Timeout异常则重新查询
@@ -182,11 +274,12 @@ def get_wildcard_record(domain, resolver):
         raise tenacity.TryAgain
     except (NXDOMAIN, YXDOMAIN, NoAnswer, NoNameservers) as e:
         logger.log('DEBUG', e.args)
-        logger.log('INFOR', f'{domain} dont have A record on authoritative name server')
+        logger.log('DEBUG', f'{domain} dont have A record on authoritative name server')
         return None, None
     except Exception as e:
         logger.log('ERROR', e.args)
-        logger.log('ERROR', f'Query {domain} wildcard dns record in authoritative name server error')
+        logger.log('ERROR', f'Query {domain} wildcard dns record in '
+                            f'authoritative name server error')
         exit(1)
     else:
         if answer.rrset is None:
@@ -205,12 +298,14 @@ def collect_wildcard_record(domain, authoritative_ns):
     if not authoritative_ns:
         return list(), int()
     resolver = utils.dns_resolver()
-    resolver.nameservers = authoritative_ns
-    resolver.rotate = True
-    resolver.cache = None
+    resolver.nameservers = authoritative_ns  # 使用权威名称服务器
+    resolver.rotate = True  # 随机使用NS
+    resolver.cache = None  # 不使用DNS缓存
     ips = set()
     ttl = int()
+    ttls_check = list()
     ips_stat = dict()
+    ips_check = list()
     while True:
         token = secrets.token_hex(4)
         random_subdomain = f'{token}.{domain}'
@@ -221,9 +316,23 @@ def collect_wildcard_record(domain, authoritative_ns):
             logger.log('ALERT', f'Multiple query errors,'
                                 f'try to query a new random subdomain')
             continue
+        # 每5次查询检查结果列表 如果都没结果则结束查询
+        ips_check.append(ip)
+        ttls_check.append(ttl)
+        if len(ips_check) == 5:
+            if not any(ips_check):
+                logger.log('ALERT', 'The query ends because there are '
+                                    'no results for 5 consecutive queries.')
+                break
+            ips_check = list()
+        if len(ttls_check) == 5 and len(set(ttls_check)) == 5:
+            logger.log('ALERT', 'The query ends because there are '
+                                '5 different TTL results for 5 consecutive queries.')
+            ips, ttl = set(), int()
+            break
         if ip is None:
             continue
-        ips = ips.union(ip)
+        ips.update(ip)
         # 统计每个泛解析IP出现次数
         for addr in ip:
             count = ips_stat.setdefault(addr, 0)
@@ -241,21 +350,21 @@ def collect_wildcard_record(domain, authoritative_ns):
 
 
 def get_nameservers_path(enable_wildcard, ns_ip_list):
-    path = setting.brute_nameservers_path
+    path = settings.brute_nameservers_path
     if not enable_wildcard:
         return path
     if not ns_ip_list:
         return path
-    path = setting.authoritative_dns_path
+    path = settings.authoritative_dns_path
     ns_data = '\n'.join(ns_ip_list)
     utils.save_data(path, ns_data)
     return path
 
 
 def check_dict():
-    if not setting.enable_check_dict:
+    if not settings.enable_check_dict:
         return
-    sec = setting.check_time
+    sec = settings.check_time
     logger.log('ALERT', f'You have {sec} seconds to check '
                         f'whether the configuration is correct or not')
     logger.log('ALERT', f'If you want to exit, please use `Ctrl + C`')
@@ -266,13 +375,13 @@ def check_dict():
         exit(0)
 
 
-def gen_records(items, records, subdomains, ip_times, wc_ips, wc_ttl):
+def gen_result_infos(items, infos, subdomains, ip_times, wc_ips, wc_ttl):
     qname = items.get('name')[:-1]  # 去除最右边的`.`点号
     reason = items.get('status')
     resolver = items.get('resolver')
     data = items.get('data')
     answers = data.get('answers')
-    record = dict()
+    info = dict()
     cname = list()
     ips = list()
     public = list()
@@ -301,17 +410,17 @@ def gen_records(items, records, subdomains, ip_times, wc_ips, wc_ttl):
         logger.log('TRACE', f'All query result of {qname} no A record{answers}')
     # 为了优化内存 只添加有A记录且通过判断的子域到记录中
     if have_a_record and all(is_valid_flags):
-        record['resolve'] = 1
-        record['reason'] = reason
-        record['ttl'] = ttls
-        record['cname'] = cname
-        record['content'] = ips
-        record['public'] = public
-        record['times'] = times
-        record['resolver'] = resolver
-        records[qname] = record
+        info['resolve'] = 1
+        info['reason'] = reason
+        info['ttl'] = ttls
+        info['cname'] = cname
+        info['ip'] = ips
+        info['public'] = public
+        info['times'] = times
+        info['resolver'] = resolver
+        infos[qname] = info
         subdomains.append(qname)
-    return records, subdomains
+    return infos, subdomains
 
 
 def stat_ip_times(result_paths):
@@ -347,7 +456,7 @@ def stat_ip_times(result_paths):
 
 def deal_output(output_paths, ip_times, wildcard_ips, wildcard_ttl):
     logger.log('INFOR', f'Processing result')
-    records = dict()  # 用来记录所有域名解析数据
+    infos = dict()  # 用来记录所有域名有关信息
     subdomains = list()  # 用来保存所有通过有效性检查的子域
     for output_path in output_paths:
         logger.log('DEBUG', f'Processing {output_path}')
@@ -370,10 +479,10 @@ def deal_output(output_paths, ip_times, wildcard_ips, wildcard_ttl):
                 if 'answers' not in data:
                     logger.log('TRACE', f'Processing {line}, {qname} no response')
                     continue
-                records, subdomains = gen_records(items, records, subdomains,
-                                                  ip_times, wildcard_ips,
-                                                  wildcard_ttl)
-    return records, subdomains
+                infos, subdomains = gen_result_infos(items, infos, subdomains,
+                                                     ip_times, wildcard_ips,
+                                                     wildcard_ttl)
+    return infos, subdomains
 
 
 def check_by_compare(ip, ttl, wc_ips, wc_ttl):
@@ -401,13 +510,13 @@ def check_ip_times(times):
     :param  times: IP address times
     :return bool:  result
     """
-    if times > setting.ip_appear_maximum:
+    if times > settings.ip_appear_maximum:
         return True
     return False
 
 
 def is_valid_subdomain(ip, ttl, times, wc_ips, wc_ttl):
-    ip_blacklist = setting.brute_ip_blacklist
+    ip_blacklist = settings.brute_ip_blacklist
     if ip in ip_blacklist:  # 解析ip在黑名单ip则为非法子域
         return 0, 'IP blacklist'
     if all([wc_ips, wc_ttl]):  # 有泛解析记录才进行对比
@@ -426,9 +535,9 @@ def save_brute_dict(dict_path, dict_set):
 
 
 def delete_file(dict_path, output_paths):
-    if setting.delete_generated_dict:
+    if settings.delete_generated_dict:
         dict_path.unlink()
-    if setting.delete_massdns_result:
+    if settings.delete_massdns_result:
         for output_path in output_paths:
             output_path.unlink()
 
@@ -439,54 +548,56 @@ class Brute(Module):
 
     Example：
         brute.py --target domain.com --word True run
-        brute.py --target ./domains.txt --word True run
-        brute.py --target domain.com --word True --process 1 run
+        brute.py --targets ./domains.txt --word True run
+        brute.py --target domain.com --word True --concurrent 2000 run
         brute.py --target domain.com --word True --wordlist subnames.txt run
         brute.py --target domain.com --word True --recursive True --depth 2 run
         brute.py --target d.com --fuzz True --place m.*.d.com --rule '[a-z]' run
+        brute.py --target d.com --fuzz True --place m.*.d.com --fuzzlist subnames.txt run
 
     Note:
-        --alive  True/False           Only export alive subdomains or not (default False)
-        --format rst/csv/tsv/json/yaml/html/jira/xls/xlsx/dbf/latex/ods (result format)
-        --path   Result directory (default directory is ./results)
+        --format csv/json (result format)
+        --path   Result path (default None, automatically generated)
 
 
-    :param str  target:     One domain or File path of one domain per line (required)
+    :param str  target:     One domain (target or targets must be provided)
+    :param str  targets:    File path of one domain per line
     :param int  process:    Number of processes (default 1)
-    :param int  concurrent: Number of concurrent (default 10000)
+    :param int  concurrent: Number of concurrent (default 2000)
     :param bool word:       Use word mode generate dictionary (default False)
-    :param str  wordlist:   Dictionary path used in word mode (default use ./config/setting.py)
+    :param str  wordlist:   Dictionary path used in word mode (default use ./config/default.py)
     :param bool recursive:  Use recursion (default False)
     :param int  depth:      Recursive depth (default 2)
-    :param str  nextlist:   Dictionary file path used by recursive (default use ./config/setting.py)
+    :param str  nextlist:   Dictionary file path used by recursive (default use ./config/default.py)
     :param bool fuzz:       Use fuzz mode generate dictionary (default False)
     :param bool alive:      Only export alive subdomains (default False)
     :param str  place:      Designated fuzz position (required if use fuzz mode)
     :param str  rule:       Specify the regexp rules used in fuzz mode (required if use fuzz mode)
+    :param str  fuzzlist:   Dictionary path used in fuzz mode (default use ./config/default.py)
     :param bool export:     Export the results (default True)
     :param str  format:     Result format (default csv)
     :param str  path:       Result directory (default None)
-
     """
-
-    def __init__(self, target, process=None, concurrent=None, word=False,
-                 wordlist=None, recursive=False, depth=None, nextlist=None,
-                 fuzz=False, place=None, rule=None, export=True, alive=True,
-                 format='csv', path=None):
+    def __init__(self, target=None, targets=None, process=None, concurrent=None,
+                 word=False, wordlist=None, recursive=False, depth=None, nextlist=None,
+                 fuzz=False, place=None, rule=None, fuzzlist=None, export=True,
+                 alive=True, format='csv', path=None):
         Module.__init__(self)
         self.module = 'Brute'
         self.source = 'Brute'
         self.target = target
+        self.targets = targets
         self.process_num = process or utils.get_process_num()
-        self.concurrent_num = concurrent or setting.brute_concurrent_num
+        self.concurrent_num = concurrent or settings.brute_concurrent_num
         self.word = word
-        self.wordlist = wordlist or setting.brute_wordlist_path
-        self.recursive_brute = recursive or setting.enable_recursive_brute
-        self.recursive_depth = depth or setting.brute_recursive_depth
-        self.recursive_nextlist = nextlist or setting.recursive_nextlist_path
-        self.fuzz = fuzz or setting.enable_fuzz
-        self.place = place or setting.fuzz_place
-        self.rule = rule or setting.fuzz_rule
+        self.wordlist = wordlist or settings.brute_wordlist_path
+        self.recursive_brute = recursive or settings.enable_recursive_brute
+        self.recursive_depth = depth or settings.brute_recursive_depth
+        self.recursive_nextlist = nextlist or settings.recursive_nextlist_path
+        self.fuzz = fuzz or settings.enable_fuzz
+        self.place = place or settings.fuzz_place
+        self.rule = rule or settings.fuzz_rule
+        self.fuzzlist = fuzzlist or settings.fuzz_list
         self.export = export
         self.alive = alive
         self.format = format
@@ -496,8 +607,6 @@ class Brute(Module):
         self.domain = str()  # 当前正在进行爆破的域名
         self.ips_times = dict()  # IP集合出现次数
         self.enable_wildcard = False  # 当前域名是否使用泛解析
-        self.wildcard_check = setting.enable_wildcard_check
-        self.wildcard_deal = setting.enable_wildcard_deal
         self.check_env = True
         self.quite = False
 
@@ -505,21 +614,20 @@ class Brute(Module):
         logger.log('INFOR', f'Generating dictionary for {domain}')
         dict_set = set()
         # 如果domain不是self.subdomain 而是self.domain的子域则生成递归爆破字典
-        if self.place is None:
+        if self.word:
+            self.place = ''
+        if not self.place:
             self.place = '*.' + domain
         wordlist = self.wordlist
-        main_domain = self.get_maindomain(domain)
+        main_domain = utils.get_main_domain(domain)
         if domain != main_domain:
             wordlist = self.recursive_nextlist
         if self.word:
             word_subdomains = gen_word_subdomains(self.place, wordlist)
-            # set可以合并list
-            dict_set = dict_set.union(word_subdomains)
+            dict_set.update(word_subdomains)
         if self.fuzz:
-            fuzz_subdomains = gen_fuzz_subdomains(self.place, self.rule)
-            dict_set = dict_set.union(fuzz_subdomains)
-        # logger.log('INFOR', f'正在去重爆破字典')
-        # dict_set = utils.uniq_dict_list(dict_set)
+            fuzz_subdomains = gen_fuzz_subdomains(self.place, self.rule, self.fuzzlist)
+            dict_set.update(fuzz_subdomains)
         count = len(dict_set)
         logger.log('INFOR', f'Dictionary size: {count}')
         if count > 10000000:
@@ -534,8 +642,11 @@ class Brute(Module):
         if len(self.domains) > 1:
             self.bulk = True
         if self.fuzz:
-            if self.place is None or self.rule is None:
-                logger.log('FATAL', f'No fuzz position or rules specified')
+            if self.place is None:
+                logger.log('FATAL', f'No fuzz position specified')
+                exit(1)
+            if self.rule is None and self.fuzzlist is None:
+                logger.log('FATAL', f'No fuzz rules or fuzz dictionary specified')
                 exit(1)
             if self.bulk:
                 logger.log('FATAL', f'Cannot use fuzz mode in the bulk brute')
@@ -557,8 +668,8 @@ class Brute(Module):
     def main(self, domain):
         start = time.time()
         logger.log('INFOR', f'Blasting {domain} ')
-        massdns_dir = setting.third_party_dir.joinpath('massdns')
-        result_dir = setting.result_save_dir
+        massdns_dir = settings.third_party_dir.joinpath('massdns')
+        result_dir = settings.result_save_dir
         temp_dir = result_dir.joinpath('temp')
         utils.check_dir(temp_dir)
         massdns_path = utils.get_massdns_path(massdns_dir)
@@ -568,7 +679,7 @@ class Brute(Module):
         wildcard_ttl = int()  # 泛解析TTL整型值
         ns_list = query_domain_ns(self.domain)
         ns_ip_list = query_domain_ns_a(ns_list)  # DNS权威名称服务器对应A记录列表
-        self.enable_wildcard = detect_wildcard(domain, ns_ip_list)
+        self.enable_wildcard = is_enable_wildcard(domain)
 
         if self.enable_wildcard:
             wildcard_ips, wildcard_ttl = collect_wildcard_record(domain,
@@ -576,7 +687,6 @@ class Brute(Module):
         ns_path = get_nameservers_path(self.enable_wildcard, ns_ip_list)
 
         dict_set = self.gen_brute_dict(domain)
-        dict_len = len(dict_set)
 
         dict_name = f'generated_subdomains_{domain}_{timestring}.txt'
         dict_path = temp_dir.joinpath(dict_name)
@@ -602,30 +712,33 @@ class Brute(Module):
                 output_path = temp_dir.joinpath(output_name)
                 output_paths.append(output_path)
         ip_times = stat_ip_times(output_paths)
-        self.records, self.subdomains = deal_output(output_paths, ip_times,
-                                                    wildcard_ips, wildcard_ttl)
+        self.infos, self.subdomains = deal_output(output_paths, ip_times,
+                                                  wildcard_ips, wildcard_ttl)
         delete_file(dict_path, output_paths)
         end = time.time()
         self.elapse = round(end - start, 1)
-        logger.log('INFOR', f'{self.source} module takes {self.elapse} seconds, '
+        logger.log('ALERT', f'{self.source} module takes {self.elapse} seconds, '
                             f'found {len(self.subdomains)} subdomains of {domain}')
-        logger.log('DEBUG', f'{self.source} module found subdomains of {domain}:\n'
+        logger.log('DEBUG', f'{self.source} module found subdomains of {domain}: '
                             f'{self.subdomains}')
-        self.gen_result(brute=dict_len, valid=len(self.subdomains))
+        self.gen_result()
         self.save_db()
         return self.subdomains
 
     def run(self):
-        logger.log('INFOR', f'Start runing {self.source} module')
+        logger.log('INFOR', f'Start running {self.source} module')
         if self.check_env:
             utils.check_env()
-        self.domains = utils.get_domains(self.target)
-        all_subdomains = list()
+        self.domains = utils.get_domains(self.target, self.targets)
         for self.domain in self.domains:
+            self.results = list()  # 置空
+            all_subdomains = list()
             self.check_brute_params()
             if self.recursive_brute:
-                logger.log('INFOR', f'Start recursively brute the first layer subdomain of {self.domain}')
+                logger.log('INFOR', f'Start recursively brute the 1 layer subdomain'
+                                    f' of {self.domain}')
             valid_subdomains = self.main(self.domain)
+
             all_subdomains.extend(valid_subdomains)
 
             # 递归爆破下一层的子域
@@ -633,8 +746,8 @@ class Brute(Module):
             if self.recursive_brute:
                 for layer_num in range(1, self.recursive_depth):
                     # 之前已经做过1层子域爆破 当前实际递归层数是layer+1
-                    logger.log('INFOR', f'Start recursively brute'
-                                        f'the {layer_num + 1} layer subdomain of {self.domain}')
+                    logger.log('INFOR', f'Start recursively brute the {layer_num + 1} '
+                                        f'layer subdomain of {self.domain}')
                     for subdomain in all_subdomains:
                         self.place = '*.' + subdomain
                         # 进行下一层子域爆破的限制条件
@@ -643,13 +756,14 @@ class Brute(Module):
                             valid_subdomains = self.main(subdomain)
                             all_subdomains.extend(valid_subdomains)
 
-            logger.log('INFOR', f'Finished {self.source} module\'s brute {self.domain}')
+            logger.log('INFOR', f'Finished {self.source} module to brute {self.domain}')
             if not self.path:
                 name = f'{self.domain}_brute_result.{self.format}'
-                self.path = setting.result_save_dir.joinpath(name)
+                self.path = settings.result_save_dir.joinpath(name)
             # 数据库导出
             if self.export:
                 dbexport.export(self.domain,
+                                type='table',
                                 alive=self.alive,
                                 limit='resolve',
                                 path=self.path,

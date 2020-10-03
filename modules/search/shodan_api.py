@@ -1,15 +1,14 @@
-from config import api
+from config import settings
 from common.search import Search
 
 
 class ShodanAPI(Search):
     def __init__(self, domain):
         Search.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Search'
         self.source = 'ShodanAPISearch'
-        self.addr = 'https://api.shodan.io/shodan/host/search'
-        self.key = api.shodan_api_key
+        self.key = settings.shodan_api_key
 
     def search(self):
         """
@@ -17,26 +16,20 @@ class ShodanAPI(Search):
         """
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
-        query = 'hostname:.' + self.domain
-        page = 1
-        while True:
-            params = {'key': self.key, 'page': page, 'query': query,
-                      'minify': True, 'facets': {'hostnames'}}
-            resp = self.get(self.addr, params)
-            if not resp:
-                return
-            subdomains = self.match_subdomains(resp.text)
-            if not subdomains:  # 搜索没有发现子域名则停止搜索
-                break
-            if subdomains:
-                self.subdomains = self.subdomains.union(subdomains)
-            page += 1
+        url = f'https://api.shodan.io/dns/domain/{self.domain}?key={self.key}'
+        resp = self.get(url)
+        if not resp:
+            return
+        data = resp.json()
+        names = data.get('subdomains')
+        subdomain_str = str(set(map(lambda name: f'{name}.{self.domain}', names)))
+        self.subdomains = self.collect_subdomains(subdomain_str)
 
     def run(self):
         """
         类执行入口
         """
-        if not self.check(self.key):
+        if not self.have_api(self.key):
             return
         self.begin()
         self.search()
@@ -46,7 +39,7 @@ class ShodanAPI(Search):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -57,4 +50,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('freebuf.com')

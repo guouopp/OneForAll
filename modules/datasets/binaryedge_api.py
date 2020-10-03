@@ -1,15 +1,15 @@
-from config import api
+from config import settings
 from common.query import Query
 
 
 class BinaryEdgeAPI(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = 'BinaryEdgeAPIQuery'
         self.addr = 'https://api.binaryedge.io/v2/query/domains/subdomain/'
-        self.api = api.binaryedge_api
+        self.api = settings.binaryedge_api
 
     def query(self):
         """
@@ -20,16 +20,13 @@ class BinaryEdgeAPI(Query):
         self.proxy = self.get_proxy(self.source)
         url = self.addr + self.domain
         resp = self.get(url)
-        if not resp:
-            return
-        subdomains = self.match_subdomains(resp.text)
-        self.subdomains = self.subdomains.union(subdomains)
+        self.subdomains = self.collect_subdomains(resp)
 
     def run(self):
         """
         类执行入口
         """
-        if not self.check(self.api):
+        if not self.have_api(self.api):
             return
         self.begin()
         self.query()
@@ -39,7 +36,7 @@ class BinaryEdgeAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -50,4 +47,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

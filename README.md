@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/shmilylty/OneForAll/branch/master/graph/badge.svg)](https://codecov.io/gh/shmilylty/OneForAll)
 [![Maintainability](https://api.codeclimate.com/v1/badges/1287668a6b4c72af683e/maintainability)](https://codeclimate.com/github/shmilylty/OneForAll/maintainability)
 [![License](https://img.shields.io/github/license/shmilylty/OneForAll)](https://github.com/shmilylty/OneForAll/tree/master/LICENSE)
-[![python](https://img.shields.io/badge/python-3.8-blue)](https://github.com/shmilylty/OneForAll/tree/master/)
+[![python](https://img.shields.io/badge/python-3.6|3.7|3.8-blue)](https://github.com/shmilylty/OneForAll/tree/master/)
 [![python](https://img.shields.io/badge/release-v0.3.0-brightgreen)](https://github.com/shmilylty/OneForAll/releases)
 
 👊**OneForAll是一款功能强大的子域收集工具**  📝[English Document](https://github.com/shmilylty/OneForAll/tree/master/docs/en-us/README.md)
@@ -15,9 +15,11 @@
 
 📢 请务必花一点时间阅读此文档，有助于你快速熟悉OneForAll！
 
-**🐍安装要求**
+<details>
+<summary><b>🐍安装要求</b></summary>
 
-OneForAll基于[Python 3.8.0]( https://www.python.org/downloads/release/python-380/ )开发和测试，请使用高于Python 3.8.0的稳定发行版本，其他版本可能会出现一些问题（Windows平台必须使用3.8.0以上版本），安装Python环境可以参考[Python 3 安装指南](https://pythonguidecn.readthedocs.io/zh/latest/starting/installation.html#python-3)。运行以下命令检查Python和pip3版本：
+OneForAll基于[Python 3.6.0]( https://www.python.org/downloads/release/python-360/ )开发和测试，OneForAll需要高于Python 3.6.0的版本才能运行。
+安装Python环境可以参考[Python 3 安装指南](https://pythonguidecn.readthedocs.io/zh/latest/starting/installation.html#python-3)。运行以下命令检查Python和pip3版本：
 ```bash
 python -V
 pip3 -V
@@ -27,8 +29,10 @@ pip3 -V
 Python 3.8.0
 pip 19.2.2 from C:\Users\shmilylty\AppData\Roaming\Python\Python38\site-packages\pip (python 3.8)
 ```
+</details>
 
-**✔安装步骤（git 版）**
+<details>
+<summary><b>✔安装步骤（git 版）</b></summary>
 
 1. **下载**
 
@@ -49,24 +53,27 @@ git clone https://github.com/shmilylty/OneForAll.git
 
 ```bash
 cd OneForAll/
-python -m pip install -U pip setuptools wheel -i https://mirrors.aliyun.com/pypi/simple/
+python3 -m pip install -U pip setuptools wheel -i https://mirrors.aliyun.com/pypi/simple/
 pip3 install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
-python oneforall.py --help
+python3 oneforall.py --help
 ```
 
 其他系统平台的请参考[依赖安装](https://github.com/shmilylty/OneForAll/tree/master/docs/installation_dependency.md)，如果在安装依赖过程中发现编译某个依赖库失败时可以参考[troubleshooting.md](https://github.com/shmilylty/OneForAll/tree/master/docs/troubleshooting.md)中解决方法，如果还没有解决欢迎加群反馈。
 
 3. **更新**
 
-❗注意：如果你之前已经克隆了项目运行之前请**备份**自己修改过的文件到项目外的地方（如**config.py**），然后执行以下命令**更新**项目：
+执行以下命令**更新**项目（可保存对`/config/setting.py`和`/config/api.py`的修改）：
 
 ```bash
-git fetch --all
-git reset --hard origin/master
-git pull
+git stash        # 暂存本地的修改
+git fetch --all  # 拉取项目更新
+git pull         # 下载覆盖
+git stash pop    # 释放本地修改
 ```
+</details>
 
-**✔安装步骤（docker 版）**
+<details>
+<summary><b>✔安装步骤（docker 版）</b></summary>
 
 首先下载并编辑配置文件，添加自己的`api`和个性化设置，并保留原始文件结构
 
@@ -84,12 +91,18 @@ docker pull shmilylty/oneforall
 docker run -it --rm -v ~/results:/OneForAll/results -v ~/.config:/OneForAll/config oneforall --target example.com run
 ```
 参数直接加在指令末尾，结果会输出在本地目录`~/results`，如需保存到其他位置，可以自行修改
+</details>
 
-**✨使用演示**
+
+<details>
+<summary><b>✨使用演示</b></summary>
+
+如果你的主机不在中国，请把 [setting](https://github.com/shmilylty/OneForAll/blob/master/config/setting.py#L46) 中`brute_nameservers_path`选项的`cn_nameservers.txt`修改为`nameservers.txt`。
 
 1. 如果你是通过pip3安装的依赖则使用以下命令运行示例：   
 ```bash
 python3 oneforall.py --target example.com run
+python3 oneforall.py --targets ./example.txt run
 ```
 
 ![Example](./docs/usage_example.svg)
@@ -100,12 +113,14 @@ pipenv run python oneforall.py --target example.com run
 ```
 3. 开启爆破模块运行（使用massdns进行爆破，网络占用极大，可能会阻塞网络）
 ```bash
-python3 run python oneforall.py --target example.com --burte True run
+python3 oneforall.py --target example.com --brute True run
 # or
-pipenv run python oneforall.py --target example.com --burte True run
+pipenv run python oneforall.py --target example.com --brute True run
 ```
+</details>
 
-**🧐结果说明**
+<details>
+<summary><b>🧐结果说明</b></summary>
 
 我们以`python3 oneforall.py --target example.com run`命令为例，OneForAll在默认参数正常执行完毕会在results目录生成相应结果：
 
@@ -128,8 +143,10 @@ pipenv run python oneforall.py --target example.com --burte True run
 其中类似`example_com_now_result`表存放现在子域收集结果，一般情况关注这张表就可以了。
 
 结果具体字段的解释说明请查看![相关文档](./docs/field.md)。
+</details>
 
-**🤔使用帮助**
+<details>
+<summary><b>🤔使用帮助</b></summary>
 
 命令行参数只提供了一些常用参数，更多详细的参数配置请见[config.py](https://github.com/shmilylty/OneForAll/tree/master/config/setting.py)，如果你认为有些参数是命令界面经常使用到的或缺少了什么参数等问题非常欢迎反馈。由于众所周知的原因，如果要使用一些被墙的收集接口请先到[config.py](https://github.com/shmilylty/OneForAll/tree/master/config/setting.py)配置代理，有些收集模块需要提供API（大多都是可以注册账号免费获取），如果需要使用请到[api.py](https://github.com/shmilylty/OneForAll/tree/master/config/api.py)配置API信息，如果不使用请忽略有关报错提示。（详细模块请阅读[收集模块说明](https://github.com/shmilylty/OneForAll/tree/master/docs/collection_modules.md)）
 
@@ -159,7 +176,7 @@ DESCRIPTION
     Example:
         python3 oneforall.py version
         python3 oneforall.py --target example.com run
-        python3 oneforall.py --target ./domains.txt run
+        python3 oneforall.py --targets ./domains.txt run
         python3 oneforall.py --target example.com --valid None run
         python3 oneforall.py --target example.com --brute True run
         python3 oneforall.py --target example.com --port small run
@@ -172,17 +189,18 @@ DESCRIPTION
     Note:
         参数alive可选值True，False分别表示导出存活，全部子域结果
         参数port可选值有'default', 'small', 'large', 详见config.py配置
-        参数format可选格式有'rst', 'csv', 'tsv', 'json', 'yaml', 'html',
-                          'jira', 'xls', 'xlsx', 'dbf', 'latex', 'ods'
+        参数format可选格式有 'csv','json'
         参数path默认None使用OneForAll结果目录生成路径
 
 ARGUMENTS
     TARGET
-        单个域名或者每行一个域名的文件路径(必需参数)
+        单个域名(二选一必需参数)
+    TARGETS
+        每行一个域名的文件路径(二选一必需参数)
 
 FLAGS
     --brute=BRUTE
-        使用爆破模块(默认False)
+        s
     --dns=DNS
         DNS解析子域(默认True)
     --req=REQ
@@ -198,6 +216,7 @@ FLAGS
     --takeover=TAKEOVER
         检查子域接管(默认False)
 ```
+</details>
 
 ## 🎉项目简介
 
@@ -212,7 +231,7 @@ FLAGS
 
 为了解决以上痛点，此项目应用而生，正如其名，我希望OneForAll是一款集百家之长，功能强大的全面快速子域收集终极神器🔨。
 
-目前OneForAll还在开发中，肯定有不少问题和需要改进的地方，欢迎大佬们提交[Issues](https://github.com/shmilylty/OneForAll/issues)和[PR](https://github.com/shmilylty/OneForAll/pulls)，用着还行给个小星星✨吧，目前有一个专门用于OneForAll交流和反馈QQ群👨‍👨‍👦‍👦：:[**824414244**](//shang.qq.com/wpa/qunwpa?idkey=125d3689b60445cdbb11e4ddff38036b7f6f2abbf4f7957df5dddba81aa90771)（加群验证：我的英雄学院）。
+目前OneForAll还在开发中，肯定有不少问题和需要改进的地方，欢迎大佬们提交[Issues](https://github.com/shmilylty/OneForAll/issues)和[PR](https://github.com/shmilylty/OneForAll/pulls)，用着还行给个小星星✨吧，目前有一个专门用于OneForAll交流和反馈QQ群👨‍👨‍👦‍👦：:[**824414244**](//shang.qq.com/wpa/qunwpa?idkey=125d3689b60445cdbb11e4ddff38036b7f6f2abbf4f7957df5dddba81aa90771)（加群验证：信息收集）。
 
 ## 👍功能特性
 
@@ -228,36 +247,21 @@ FLAGS
 * **支持子域验证**，默认开启子域验证，自动解析子域DNS，自动请求子域获取title和banner，并综合判断子域存活情况。
 * **支持子域接管**，默认开启子域接管风险检查，支持子域自动接管（目前只有Github，有待完善），支持批量检查。
 * **处理功能强大**，发现的子域结果支持自动去除，自动DNS解析，HTTP请求探测，自动筛选出有效子域，拓展子域的Banner信息，最终支持的导出格式有`rst`, `csv`, `tsv`, `json`, `yaml`, `html`, `xls`, `xlsx`, `dbf`, `latex`, `ods`。
-* **速度极快**，[收集模块](https://github.com/shmilylty/OneForAll/tree/master/collect.py)使用多线程调用，[爆破模块](https://github.com/shmilylty/OneForAll/tree/master/brute.py)使用[massdns](https://github.com/blechschmidt/massdns)，默认配置下速度最少能达到10000pps，子域验证中DNS解析和HTTP请求使用异步多协程，多线程检查[子域接管](https://github.com/shmilylty/OneForAll/tree/master/takeover.py)风险。
+* **速度极快**，[收集模块](https://github.com/shmilylty/OneForAll/tree/master/collect.py)使用多线程调用，[爆破模块](https://github.com/shmilylty/OneForAll/tree/master/brute.py)使用[massdns](https://github.com/blechschmidt/massdns)，DNS解析速度每秒可解析350000以上个域名，子域验证中DNS解析和HTTP请求使用异步多协程，多线程检查[子域接管](https://github.com/shmilylty/OneForAll/tree/master/takeover.py)风险。
 * **体验良好**，各模块都有进度条，异步保存各模块结果。
 
 如果你有其他很棒的想法请务必告诉我！😎
 
 ## 🌲目录结构
-项目的目录结构说明请参阅[directory_structure](https://github.com/shmilylty/OneForAll/tree/master/docs/directory_structure.md)。
 
-关于子域字典来源的说明：
-1. 开源子域收集工具中的部分高频子域名字字典。
-2. 网上有关服务商公布的最流行子域列表。
- * [DNSPod](https://github.com/DNSPod/oh-my-free-data)
-3. 网上有关安全研究人员关于对全网常见子域的研究结果。
- * [the_most_popular_subdomains_on_the_internet](https://bitquark.co.uk/blog/2016/02/29/the_most_popular_subdomains_on_the_internet)
- * [The most popular subdomains on the internet (2017 edition)](https://medium.com/@cmeister2/the-most-popular-subdomains-on-the-internet-2017-edition-a6b9c8a20fd8)
-4. 网上有关安全研究人员关于对证书透明度中常见子域提取的结果。
- * [Top 100000 Subdomains in Certificate Transparency](https://github.com/internetwache/CT_subdomains)
-5. 常见业务命名规律：
- * 单字母、单字母+单数字、双字母、双字母+单数字、双字母+双数字、三字母、四字母；
- * 单数字、双数字、三数字；
-6. 在公司或者说在DevOps中常见的工具和软件名称。
-7. 常见中文单词拼音和常见英文单词。
-8. 从以上获取的字典做优化排序以及脏数据去除处理。
-9. 非常欢迎你贡献更好的字典。
+项目的目录结构说明请参阅[directory_structure.md](https://github.com/shmilylty/OneForAll/tree/master/docs/directory_structure.md)。
+
+项目中子域字典来源说明请参阅[dictionary source.md](https://github.com/shmilylty/OneForAll/tree/master/docs/dictionary_source.md)。
+
 
 ## 👏用到框架
 
-* [aiodns](https://github.com/saghul/aiodns) - 简单DNS异步解析库。
 * [aiohttp](https://github.com/aio-libs/aiohttp) - 异步http客户端/服务器框架
-* [aiomultiprocess](https://github.com/jreese/aiomultiprocess) - 将Python代码提升到更高的性能水平(multiprocessing和asyncio结合，实现异步多进程多协程)
 * [beautifulsoup4](https://pypi.org/project/beautifulsoup4/) - 可以轻松从HTML或XML文件中提取数据的Python库
 * [fire](https://github.com/google/python-fire) - Python Fire是一个纯粹根据任何Python对象自动生成命令行界面（CLI）的库
 * [loguru](https://github.com/Delgan/loguru) - 旨在带来愉快的日志记录Python库

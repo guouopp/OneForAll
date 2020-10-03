@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/shmilylty/OneForAll/branch/master/graph/badge.svg)](https://codecov.io/gh/shmilylty/OneForAll)
 [![Maintainability](https://api.codeclimate.com/v1/badges/1287668a6b4c72af683e/maintainability)](https://codeclimate.com/github/shmilylty/OneForAll/maintainability)
 [![License](https://img.shields.io/github/license/shmilylty/OneForAll)](https://github.com/shmilylty/OneForAll/tree/master/LICENSE)
-[![python](https://img.shields.io/badge/python-3.8-blue)](https://github.com/shmilylty/OneForAll/tree/master/)
+[![python](https://img.shields.io/badge/python-3.6|3.7|3.8-blue)](https://github.com/shmilylty/OneForAll/tree/master/)
 [![python](https://img.shields.io/badge/release-v0.3.0-brightgreen)](https://github.com/shmilylty/OneForAll/releases)
 
 👊**OneForAll is a powerful subdomain integration tool**  📝[中文文档](https://github.com/shmilylty/OneForAll/tree/master/README.md)
@@ -15,9 +15,11 @@
 
 📢 Please read this document to help you start quickly!
 
-**🐍Installation requirements**
+<details>
+<summary><b>🐍Installation requirements</b></summary>
 
-OneForAll is developed and tested based on [Python 3.8.0](https://www.python.org/downloads/release/python-380/). Recommend use release higher than Python 3.8.0 (Windows platform must use Python 3.8.0 or later). For more information on installing the Python environment, please read [Python 3 installation Guide](https://pythonguidecn.readthedocs.io/zh/latest/starting/installation.html#python-3).
+OneForAll is developed and tested based on [Python 3.6.0](https://www.python.org/downloads/release/python-360/), OneForAll needs to be higher than Python 3.6.0 to run.
+For more information on installing the Python environment, please read [Python 3 Installation Guide](https://pythonguidecn.readthedocs.io/zh/latest/starting/installation.html#python-3).
 
 After installation python, run the following command to check the Python and pip3 versions:
 ```bash
@@ -29,8 +31,10 @@ If you see the following output, there is no problem with the Python environment
 Python 3.8.0
 pip 19.2.2 from C:\Users\shmilylty\AppData\Roaming\Python\Python37\site-packages\pip (python 3.8)
 ```
+</details>
 
-**✔Installation steps (from Git)**
+<details>
+<summary><b>✔Installation steps (for Git)</b></summary>
 
 1. **Download**
 
@@ -53,36 +57,44 @@ You can use pip3 install requirements, the following is an example of using **pi
 
 ```bash
 cd OneForAll/
-python -m pip install -U pip setuptools wheel
+python3 -m pip install -U pip setuptools wheel
 pip3 install -r requirements.txt
-python oneforall.py --help
+python3 oneforall.py --help
 ```
 
 For other system platforms, please read [dependency installation](https://github.com/shmilylty/OneForAll/tree/master/docs/installation_dependency.md). If you compile failed during the installation, you can find solution in the [troubleshooting.md](https://github.com/shmilylty/OneForAll/tree/master/docs/troubleshooting.md) documentation. If still not resolved, welcome [issues](https://github.com/shmilylty/OneForAll/issues).
 
 3. **Update**
 
-❗Note: If you have cloned the project before, please backup modified files (such as **./config**) before updating, then run the following command to **update** project:
+Run the following command to **update** project ( maintain your updates to `/config/setting.py`and`/config/api.py`):
 
 ```bash
-git fetch --all
-git reset --hard origin/master
-git pull
+git stash        # Stash local Git changes
+git fetch --all  # Fetch updates
+git pull         # Pull updates
+git stash pop    # Apply the local Git changes stash
 ```
+</details>
 
-**✔Installation steps (from Docker)**
+<details>
+<summary><b>✔Installation steps (for Docker)</b></summary>
 
 ```shell
 docker pull shmilylty/oneforall
 docker run -it --rm -v ~/results:/OneForAll/results oneforall
 ```
 Result will be saved in `~/results`.
+</details>
 
-**✨Usage**
+<details>
+<summary><b>✨OneForAll usage</b></summary>
+
+If your computer are not in China, change [setting](https://github.com/shmilylty/OneForAll/blob/master/config/setting.py#L46) `brute_nameservers_path` param `cn_nameservers.txt` to `nameservers.txt` plz.
 
 1. If you are use pip3, run the following command: 
 ```bash
 python3 oneforall.py --target example.com run
+python3 oneforall.py --targets ./example.txt run
 ```
 
 ![Example](../usage_example.svg)
@@ -94,12 +106,14 @@ pipenv run python oneforall.py --target example.com run
 
 3. Turn on brute modules, run the following command(Use massdns for enumerating subdomains, the network may be blocked): 
 ```bash
-python3 run python oneforall.py --target example.com --burte True run
+python3 oneforall.py --target example.com --brute True run
 # or
-pipenv run python oneforall.py --target example.com --burte True run
+pipenv run python oneforall.py --target example.com --brute True run
 ```
+</details>
 
-**🧐Instructions for results**
+<details>
+<summary><b>🧐Instructions for results</b></summary>
 
 Let's take the command `python3 oneforall.py --target example.com run` as an example. When command finished in the default configuration, OneForAll will generate results in the results directory: 
 
@@ -120,8 +134,10 @@ Let's take the command `python3 oneforall.py --target example.com run` as an exa
 `example_com_last_result` table stores the results of subdomain collection last time. 
 
 `example_com_now_result` table stores the collection results of the current subdomains. Usually using this table is enough.
+</details>
 
-**🤔Instructions for Use**
+<details>
+<summary><b>🤔Instructions for Use</b></summary>
 
 The CLI only provide some common parameters. For more configuration, please read [config.py](https://github.com/shmilylty/OneForAll/tree/master/config/setting.py). IF you have any suggestions, welcome feedback. Some modules need access API (most of which are freely available after registered accounts). If you need , please go to [api.py](https://github.com/shmilylty/OneForAll/tree/master/config/api.py) to configure the API. If not used, just ignore the error message. (For module detailes, please read [collection module description](https://github.com/shmilylty/OneForAll/tree/master/docs/collection_modules.md))
 
@@ -151,7 +167,7 @@ DESCRIPTION
     Example:
         python3 oneforall.py version
         python3 oneforall.py --target example.com run
-        python3 oneforall.py --target ./domains.txt run
+        python3 oneforall.py --targets ./domains.txt run
         python3 oneforall.py --target example.com --alive False run
         python3 oneforall.py --target example.com --brute True run
         python3 oneforall.py --target example.com --port medium run
@@ -164,16 +180,18 @@ DESCRIPTION
     Note:
         --alive  True/False           Only export alive subdomains or not (default False)
         --port   default/small/large  See details in ./config/setting.py(default port 80)
-        --format rst/csv/tsv/json/yaml/html/jira/xls/xlsx/dbf/latex/ods (result format)
+        --format csv/json (result format)
         --path   Result directory (default directory is ./results)
 
 ARGUMENTS
     TARGET
-        One domain or File path of one domain per line (required)
+        One domain (required)
+    TARGETS
+        File path of one domain per line (required)
 
 FLAGS
     --brute=BRUTE
-        Use brute module (default False)
+        Use brute module (default True)
     --dns=DNS
         Use DNS resolution (default True)
     --req=REQ
@@ -194,6 +212,7 @@ COMMANDS
 
      version
 ```
+</details>
 
 ## 🎉Why OneForAll？
 
@@ -227,31 +246,16 @@ At present, OneForAll is under development, there must be a lot of problems and 
 * **Support subdmain verification**, default enable, automatically resolve DNS, request subdomain to obtain response, and determine subdomain alive or not.
 * **Support subdomain takeover**, default enable, supports bulk inspection, and automatic takeover subdomain (only Github, remains to be improved at present).
 * **Powerful processing feature**, support automatic deduplicate, DNS resolve, HTTP request, filter valid subdomains and information for subdomains. Supported export formats: `rst`, `csv`, `tsv`, `json`, `yaml`, `html`, `xls`, `xlsx`, `dbf`, `latex`, `ods`.
-* **Very fast**, [collection module](https://github.com/shmilylty/OneForAll/tree/master/collect.py) uses multi-threading, [brute module](https://github.com/shmilylty/OneForAll/tree/master/brute.py) uses [massdns](https://github.com/blechschmidt/massdns), the speed can at least reach 10000pps by the default configuration. DNS resolve and HTTP requests use async-coroutine. [subdomain takeover](https://github.com/shmilylty/OneForAll/tree/master/takeover.py) uses multi-threading.
+* **Very fast**, [collection module](https://github.com/shmilylty/OneForAll/tree/master/collect.py) uses multi-threading, [brute module](https://github.com/shmilylty/OneForAll/tree/master/brute.py) uses [MassDNS](https://github.com/blechschmidt/massdns), MassDNS is capable of resolving over 350,000 names per second using publicly available resolvers. DNS resolve and HTTP requests use async-coroutine. [subdomain takeover](https://github.com/shmilylty/OneForAll/tree/master/takeover.py) uses multi-threading.
 * **Good experience**, each module has a progress bar, and save results asynchronously.
 
 If you have any other good ideas, please let me know!😎
 
 ## 🌲Directory structure
 
-For the description of the project's directory structure, please refer to [directory_structure](https://github.com/shmilylty/OneForAll/tree/master/docs/directory_structure.md).
+For the description of the project's directory structure, please refer to [directory_structure.md](https://github.com/shmilylty/OneForAll/tree/master/docs/directory_structure.md).
 
-Description of the subdomain dictionary source:
-
-1. Some common subdomain dictionary in open source tool.
-2. List of the most popular subdomains published by domain service providers.
- * [DNSPod](https://github.com/DNSPod/oh-my-free-data)
-3. Research results by security researchers:
- * [the_most_popular_subdomains_on_the_internet](https://bitquark.co.uk/blog/2016/02/29/the_most_popular_subdomains_on_the_internet)
- * [The most popular subdomains on the internet (2017 edition)](https://medium.com/@cmeister2/the-most-popular-subdomains-on-the-internet-2017-edition-a6b9c8a20fd8)
- * [Top 100000 Subdomains in Certificate Transparency](https://github.com/internetwache/CT_subdomains)
-4. Common naming rules:
-* single letter, single letter + single number, double letter, double letter + single number, double letter + double number, three letters, four letters; 
-* single number, double number, three numbers;
-5. The names of tools and software that are common in companies or DevOps. 
-6. Common Chinese Pinyin words and common English words.
-7. Optimize sorting and remove dirty data from the dictionary obtained above.
-8. You are very welcome to contribute a better dictionary.
+For a description of the source of the subdomain dictionary, please refer to [dictionary_source.md](https://github.com/shmilylty/OneForAll/tree/master/docs/en-us/dictionary_source.md).
 
 ## 👏Framework used
 

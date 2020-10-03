@@ -1,16 +1,16 @@
-from config import api
+from config import settings
 from common.query import Query
 
 
 class RiskIQ(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Intelligence'
         self.source = 'RiskIQAPIQuery'
         self.addr = 'https://api.passivetotal.org/v2/enrichment/subdomains'
-        self.user = api.riskiq_api_username
-        self.key = api.riskiq_api_key
+        self.user = settings.riskiq_api_username
+        self.key = settings.riskiq_api_key
 
     def query(self):
         """
@@ -26,13 +26,14 @@ class RiskIQ(Query):
             return
         data = resp.json()
         names = data.get('subdomains')
-        self.subdomains = set(map(lambda sub: f'{sub}.{self.domain}', names))
+        subdomain_str = str(set(map(lambda name: f'{name}.{self.domain}', names)))
+        self.subdomains = self.collect_subdomains(subdomain_str)
 
     def run(self):
         """
         类执行入口
         """
-        if not self.check(self.user, self.key):
+        if not self.have_api(self.user, self.key):
             return
         self.begin()
         self.query()
@@ -42,7 +43,7 @@ class RiskIQ(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -53,4 +54,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('alibabagroup.com')

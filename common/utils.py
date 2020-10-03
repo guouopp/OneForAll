@@ -1,25 +1,27 @@
-import json
 import os
 import re
 import sys
 import time
-import string
+import json
+import socket
 import random
+import string
 import platform
 import subprocess
+from urllib.parse import scheme_chars
 from ipaddress import IPv4Address, ip_address
+from pathlib import Path
 from stat import S_IXUSR
 
-import psutil
-import tenacity
+import dns
 import requests
-from pathlib import Path
-from records import Record, RecordCollection
+import tenacity
 from dns.resolver import Resolver
 
-from common.domain import Domain
 from common.database import Database
-from config import setting
+from common.domain import Domain
+from common.records import Record, RecordCollection
+from config import settings
 from config.log import logger
 
 user_agents = [
@@ -33,6 +35,9 @@ user_agents = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:61.0) '
     'Gecko/20100101 Firefox/68.0',
     'Mozilla/5.0 (X11; Linux i586; rv:31.0) Gecko/20100101 Firefox/68.0']
+
+IP_RE = re.compile(r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$')  # pylint: disable=line-too-long
+SCHEME_RE = re.compile(r'^([' + scheme_chars + ']+:)?//')
 
 
 def gen_random_ip():
@@ -49,30 +54,24 @@ def gen_fake_header():
     """
     Generate fake request headers
     """
-    ua = random.choice(user_agents)
-    headers = {
-        'Accept': 'text/html,application/xhtml+xml,'
-                  'application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate',
-        'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-        'Cache-Control': 'max-age=0',
-        'DNT': '1',
-        'Referer': 'https://www.google.com/',
-        'Upgrade-Insecure-Requests': '1',
-        'User-Agent': ua,
-        'X-Forwarded-For': '127.0.0.1'
-    }
+    headers = settings.request_default_headers
+    if not isinstance(headers, dict):
+        headers = dict()
+    if settings.enable_random_ua:
+        ua = random.choice(user_agents)
+        headers['User-Agent'] = ua
+    headers['Accept-Encoding'] = 'gzip, deflate'
     return headers
 
 
 def get_random_header():
     """
-    Get random proxy
+    Get random header
     """
-    header = None
-    if setting.fake_header:
-        header = gen_fake_header()
-    return header
+    headers = gen_fake_header()
+    if not isinstance(headers, dict):
+        headers = None
+    return headers
 
 
 def get_random_proxy():
@@ -80,7 +79,7 @@ def get_random_proxy():
     Get random proxy
     """
     try:
-        return random.choice(setting.proxy_pool)
+        return random.choice(settings.request_proxy_pool)
     except IndexError:
         return None
 
@@ -89,7 +88,7 @@ def get_proxy():
     """
     Get proxy
     """
-    if setting.enable_proxy:
+    if settings.enable_request_proxy:
         return get_random_proxy()
     return None
 
@@ -110,54 +109,65 @@ def split_list(ls, size):
     return [ls[i:i + size] for i in range(0, len(ls), size)]
 
 
-def get_domains(target):
-    """
-    Get domains
+def match_main_domain(domain):
+    if not isinstance(domain, str):
+        return None
+    item = domain.lower().strip()
+    return Domain(item).match()
 
-    :param  set or str target:
-    :return list: domain list
-    """
+
+def read_target_file(target):
     domains = list()
-    logger.log('DEBUG', f'Getting domains')
-    if isinstance(target, (set, tuple)):
-        domains = list(target)
-    elif isinstance(target, list):
-        domains = target
-    elif isinstance(target, str):
-        path = Path(target)
-        if path.exists() and path.is_file():
-            with open(target, encoding='utf-8', errors='ignore') as file:
-                for line in file:
-                    line = line.lower().strip()
-                    domain = Domain(line).match()
-                    if domain:
-                        domains.append(domain)
-        else:
-            target = target.lower().strip()
-            domain = Domain(target).match()
-            if domain:
-                domains.append(domain)
-    count = len(domains)
-    if count == 0:
-        logger.log('FATAL', f'Get {count} domains')
-        exit(1)
-    logger.log('INFOR', f'Get {count} domains')
+    with open(target, encoding='utf-8', errors='ignore') as file:
+        for line in file:
+            domain = match_main_domain(line)
+            if not domain:
+                continue
+            domains.append(domain)
+    sorted_domains = sorted(set(domains), key=domains.index)
+    return sorted_domains
+
+
+def get_from_target(target):
+    domains = set()
+    if isinstance(target, str):
+        if target.endswith('.txt'):
+            logger.log('FATAL', 'Use targets parameter for multiple domain names')
+            exit(1)
+        domain = match_main_domain(target)
+        if not domain:
+            return domains
+        domains.add(domain)
     return domains
 
 
-def get_semaphore():
-    """
-    获取查询并发值
+def get_from_targets(targets):
+    domains = set()
+    if not isinstance(targets, str):
+        return domains
+    try:
+        path = Path(targets)
+    except Exception as e:
+        logger.log('ERROR', e.args)
+        return domains
+    if path.exists() and path.is_file():
+        domains = read_target_file(targets)
+        return domains
+    return domains
 
-    :return: 并发整型值
-    """
-    system = platform.system()
-    if system == 'Windows':
-        return 800
-    elif system == 'Linux':
-        return 800
-    elif system == 'Darwin':
-        return 800
+
+def get_domains(target, targets=None):
+    logger.log('DEBUG', f'Getting domains')
+    target_domains = get_from_target(target)
+    targets_domains = get_from_targets(targets)
+    domains = list(target_domains.union(targets_domains))
+    if targets_domains:
+        domains = sorted(domains, key=targets_domains.index)  # 按照targets原本的index排序
+    logger.log('INFOR', f'Get {len(domains)} domains')
+    if not domains:
+        logger.log('ERROR', f'Did not get a valid domain name')
+    logger.log('DEBUG', f'The obtained domains \n{domains}')
+    return domains
 
 
 def check_dir(dir_path):
@@ -176,7 +186,7 @@ def check_path(path, name, format):
     :return: 保存路径
     """
     filename = f'{name}.{format}'
-    default_path = setting.result_save_dir.joinpath(filename)
+    default_path = settings.result_save_dir.joinpath(filename)
     if isinstance(path, str):
         path = repr(path).replace('\\', '/')  # 将路径中的反斜杠替换为正斜杠
         path = path.replace('\'', '')  # 去除多余的转义
@@ -202,12 +212,7 @@ def check_format(format, count):
     :param count: 数量
     :return: 导出格式
     """
-    formats = ['rst', 'csv', 'tsv', 'json', 'yaml', 'html',
-               'jira', 'xls', 'xlsx', 'dbf', 'latex', 'ods']
-    if format == 'xls' and count > 65000:
-        logger.log('ALERT', '\'xls\' file is limited to 65000 lines')
-        logger.log('ALERT', 'So use xlsx format replace')
-        return 'xlsx'
+    formats = ['csv', 'json', ]
     if format in formats:
         return format
     else:
@@ -328,18 +333,6 @@ def remove_invalid_string(string):
     return re.sub(r'[\000-\010]|[\013-\014]|[\016-\037]', r'', string)
 
 
-def check_value(values):
-    if not isinstance(values, dict):
-        return values
-    for key, value in values.items():
-        if value is None:
-            continue
-        if isinstance(value, str) and len(value) > 32767:
-            # Excel文件中单元格值长度不能超过32767
-            values[key] = value[:32767]
-    return values
-
-
 def export_all_results(path, name, format, datas):
     path = check_path(path, name, format)
     logger.log('ALERT', f'The subdomain result for all main domains: {path}')
@@ -351,8 +344,6 @@ def export_all_results(path, name, format, datas):
             row.pop('response')
         keys = row.keys()
         values = row.values()
-        if format in {'xls', 'xlsx'}:
-            values = check_value(values)
         row_list.append(Record(keys, values))
     rows = RecordCollection(iter(row_list))
     content = rows.export(format)
@@ -396,9 +387,9 @@ def dns_resolver():
     dns解析器
     """
     resolver = Resolver()
-    resolver.nameservers = setting.resolver_nameservers
-    resolver.timeout = setting.resolver_timeout
-    resolver.lifetime = setting.resolver_lifetime
+    resolver.nameservers = settings.resolver_nameservers
+    resolver.timeout = settings.resolver_timeout
+    resolver.lifetime = settings.resolver_lifetime
     return resolver
 
 
@@ -458,8 +449,8 @@ def set_id_none(data):
 def get_filtered_data(data):
     filtered_data = []
     for item in data:
-        valid = item.get('resolve')
-        if valid == 0:
+        resolve = item.get('resolve')
+        if resolve != 1:
             filtered_data.append(item)
     return filtered_data
 
@@ -495,35 +486,15 @@ def ip_is_public(ip_str):
 
 
 def get_process_num():
-    process_num = setting.brute_process_num
+    process_num = settings.brute_process_num
     if isinstance(process_num, int):
         return min(os.cpu_count(), process_num)
     else:
         return 1
 
 
-def get_coroutine_num():
-    coroutine_num = setting.resolve_coroutine_num
-    if isinstance(coroutine_num, int):
-        return max(64, coroutine_num)
-    elif coroutine_num is None:
-        mem = psutil.virtual_memory()
-        total_mem = mem.total
-        g_size = 1024 * 1024 * 1024
-        if total_mem <= 1 * g_size:
-            return 64
-        elif total_mem <= 2 * g_size:
-            return 128
-        elif total_mem <= 4 * g_size:
-            return 256
-        elif total_mem <= 8 * g_size:
-            return 512
-        elif total_mem <= 16 * g_size:
-            return 1024
-        else:
-            return 2048
-    else:
-        return 64
+def get_request_count():
+    return os.cpu_count() * 10
 
 
 def uniq_dict_list(dict_list):
@@ -541,14 +512,14 @@ def delete_file(*paths):
 @tenacity.retry(stop=tenacity.stop_after_attempt(3))
 def check_net():
     logger.log('INFOR', 'Checking Internet environment')
-    urls = ['http://www.example.com', 'http://www.baidu.com',
-            'http://www.bing.com', 'http://www.taobao.com',
-            'http://www.linkedin.com', 'http://www.msn.com',
-            'http://www.apple.com', 'http://microsoft.com']
+    urls = ['http://www.baidu.com', 'http://www.bing.com',
+            'http://www.apple.com', 'http://www.microsoft.com']
     url = random.choice(urls)
     logger.log('INFOR', f'Trying to access {url}')
+    session = requests.Session()
+    session.trust_env = False
     try:
-        rsp = requests.get(url)
+        rsp = session.get(url, proxies=get_proxy())
     except Exception as e:
         logger.log('ERROR', e.args)
         logger.log('ALERT', 'Can not access Internet, retrying')
@@ -563,7 +534,6 @@ def check_net():
 
 def check_pre():
     logger.log('INFOR', 'Checking dependent environment')
-    system = platform.system()
     implementation = platform.python_implementation()
     version = platform.python_version()
     if implementation != 'CPython':
@@ -572,17 +542,6 @@ def check_pre():
     if version < '3.6':
         logger.log('FATAL', 'OneForAll requires Python 3.6 or higher')
         exit(1)
-    if system == 'Windows' and implementation == 'CPython':
-        if version < '3.8':
-            logger.log('FATAL', 'OneForAll requires Python 3.8 '
-                                'or higher when running on Windows')
-            exit(1)
-    if system in {"Linux", "Darwin"}:
-        try:
-            import uvloop
-        except ImportError:
-            logger.log('ALERT', f'Please install the uvloop library manually '
-                                f'to accelerate subdomain requests')
 
 
 def check_env():
@@ -601,19 +560,21 @@ def check_version(local):
     api = 'https://api.github.com/repos/shmilylty/OneForAll/releases/latest'
     header = get_random_header()
     proxy = get_proxy()
-    timeout = setting.request_timeout
-    verify = setting.request_verify
+    timeout = settings.request_timeout_second
+    verify = settings.request_ssl_verify
+    session = requests.Session()
+    session.trust_env = False
     try:
-        resp = requests.get(url=api, headers=header, proxies=proxy,
-                            timeout=timeout, verify=verify)
-        json = resp.json()
-        latest = json['tag_name']
+        resp = session.get(url=api, headers=header, proxies=proxy,
+                           timeout=timeout, verify=verify)
+        resp_json = resp.json()
+        latest = resp_json['tag_name']
     except Exception as e:
         logger.log('ERROR', 'An error occurred while checking the latest version')
-        logger.log('ERROR', e.args)
+        logger.log('DEBUG', e.args)
         return
     if latest > local:
-        change = json.get("body")
+        change = resp_json.get("body")
         logger.log('ALERT', f'The current version is {local} '
                             f'but the latest version is {latest}')
         logger.log('ALERT', f'The {latest} version mainly has the following changes')
@@ -622,7 +583,9 @@ def check_version(local):
         logger.log('INFOR', f'The current version {local} is already the latest version')
 
 
-def get_maindomain(domain):
+def get_main_domain(domain):
+    if not isinstance(domain, str):
+        return None
     return Domain(domain).registered()
 
 
@@ -633,22 +596,23 @@ def call_massdns(massdns_path, dict_path, ns_path, output_path, log_path,
     quiet = ''
     if quiet_mode:
         quiet = '--quiet'
-    status_format = setting.brute_status_format
-    socket_num = setting.brute_socket_num
-    resolve_num = setting.brute_resolve_num
+    status_format = settings.brute_status_format
+    socket_num = settings.brute_socket_num
+    resolve_num = settings.brute_resolve_num
     cmd = f'{massdns_path} {quiet} --status-format {status_format} ' \
           f'--processes {process_num} --socket-count {socket_num} ' \
           f'--hashmap-size {concurrent_num} --resolvers {ns_path} ' \
           f'--resolve-count {resolve_num} --type {query_type} ' \
           f'--flush --output J --outfile {output_path} ' \
-          f'--root --error-log {log_path} {dict_path}'
+          f'--root --error-log {log_path} {dict_path} --filter OK ' \
+          f'--sndbuf 0 --rcvbuf 0'
     logger.log('DEBUG', f'Run command {cmd}')
     subprocess.run(args=cmd, shell=True)
     logger.log('DEBUG', f'Finished massdns')
 
 
 def get_massdns_path(massdns_dir):
-    path = setting.brute_massdns_path
+    path = settings.brute_massdns_path
     if path:
         return path
     system = platform.system().lower()
@@ -679,11 +643,13 @@ def is_subname(name):
 
 
 def ip_to_int(ip):
+    if isinstance(ip, int):
+        return ip
     try:
         ipv4 = IPv4Address(ip)
     except Exception as e:
         logger.log('ERROR', e.args)
-        return None
+        return 0
     return int(ipv4)
 
 
@@ -722,3 +688,148 @@ def match_subdomains(domain, html, distinct=True, fuzzy=True):
         return set(deal)
     else:
         return list(deal)
+
+
+def check_random_subdomain(subdomains):
+    if not subdomains:
+        logger.log('ALERT', f'The generated dictionary is empty')
+        return
+    for subdomain in subdomains:
+        if subdomain:
+            logger.log('ALERT', f'Please check whether {subdomain} is correct or not')
+            return
+
+
+def get_url_resp(url):
+    logger.log('INFOR', f'Attempting to request {url}')
+    timeout = settings.request_timeout_second
+    verify = settings.request_ssl_verify
+    session = requests.Session()
+    session.trust_env = False
+    try:
+        resp = session.get(url, params=None, timeout=timeout, verify=verify)
+    except Exception as e:
+        logger.log('ALERT', f'Error request {url}')
+        logger.log('DEBUG', e.args)
+        return None
+    return resp
+
+
+def decode_resp_text(resp):
+    content = resp.content
+    if not content:
+        return str('')
+    try:
+        # 先尝试用utf-8严格解码
+        content = str(content, encoding='utf-8', errors='strict')
+    except (LookupError, TypeError, UnicodeError):
+        try:
+            # 再尝试用gb18030严格解码
+            content = str(content, encoding='gb18030', errors='strict')
+        except (LookupError, TypeError, UnicodeError):
+            # 最后尝试自动解码
+            content = str(content, errors='replace')
+    return content
+
+
+def sort_by_subdomain(data):
+    return sorted(data, key=lambda item: item.get('subdomain'))
+
+
+def ping(host, path):
+    param = '-n' if platform.system().lower() == 'windows' else '-c'
+    command = ['ping', param, '5', host]
+    with open(path, "w") as f:
+        return subprocess.call(command, stdout=f, stderr=f)
+
+
+def ping_avg_time(nameserver):
+    check_dir(settings.temp_save_dir)
+    temp_path = settings.temp_save_dir.joinpath('ping')
+    ping(nameserver, path=temp_path)
+    with open(temp_path, 'r') as f:
+        text = f.read()
+        if '100.0% packet loss' in text or '100% packet loss' in text or '100% 丢失' in text:
+            logger.log('ALERT', f'100.0% packet loss, ping {nameserver} failed.')
+            return None
+        elif platform.system() in ('Darwin', 'Linux'):
+            try:
+                avg_time = re.findall(r'(?:min/avg/max/.+ )(?:\d+\.\d+)/(\d+\.\d+)/', text)[0]
+                logger.log('INFOR', f'ping {nameserver} average time {avg_time} ms.')
+            except IndexError:
+                return None
+            return avg_time
+        elif platform.system() == 'Windows':
+            try:
+                avg_time = re.findall(r'(?:Average|平均).+(\d.?)ms', text)[0]
+                logger.log('INFOR', f'ping {nameserver} average time {avg_time} ms.')
+            except IndexError:
+                return None
+            return avg_time
+        else:
+            logger.log('ALERT', f'{text}')
+            return None
+
+
+def auto_select_nameserver():
+    logger.log('INFOR', f'Ping test start, to select nameservers.')
+    avg_time1 = ping_avg_time('114.114.114.114')
+    avg_time2 = ping_avg_time('8.8.8.8')
+    if avg_time1 and avg_time2:
+        if avg_time1 < avg_time2:
+            change_nameservers_file('cn')
+            logger.log('INFOR', f'Ping test finished, use cn nameservers.')
+        else:
+            change_nameservers_file('common')
+            logger.log('INFOR', f'Ping test finished, use common nameservers.')
+    elif avg_time1 and not avg_time2:
+        change_nameservers_file('cn')
+        logger.log('INFOR', f'Ping test finished, use cn nameservers.')
+    elif not avg_time1 and avg_time1:
+        change_nameservers_file('common')
+        logger.log('INFOR', f'Ping test finished, use common nameservers.')
+    elif not avg_time1 and not avg_time1:
+        change_nameservers_file('default')
+        logger.log('INFOR', f'Ping test finished, use default nameservers.')
+        return
+
+
+def change_nameservers_file(option):
+    text = ''
+    if option == 'cn':
+        with open(settings.data_storage_dir.joinpath('cn_nameservers.txt'), 'r') as f:
+            text = f.read()
+    elif option == 'common':
+        with open(settings.data_storage_dir.joinpath('common_nameservers.txt'), 'r') as f:
+            text = f.read()
+    elif option == 'default':
+        for n in default_nameserver():
+            text = '\n'.join(n)
+    with open(settings.data_storage_dir.joinpath('nameservers.txt'), 'w') as f:
+        f.write(text)
+    return
+
+
+def default_nameserver():
+    try:
+        resolver = dns.resolver.Resolver()
+        return resolver.nameservers
+    except dns.resolver.NoResolverConfiguration:
+        logger.log('ERROR', 'Resolver configuration could not be read '
+                            'or specified no nameservers.')
+        exit(1)
+
+
+def looks_like_ip(maybe_ip):
+    """Does the given str look like an IP address?"""
+    if not maybe_ip[0].isdigit():
+        return False
+
+    try:
+        socket.inet_aton(maybe_ip)
+        return True
+    except (AttributeError, UnicodeError):
+        if IP_RE.match(maybe_ip):
+            return True
+    except socket.error:
+        return False

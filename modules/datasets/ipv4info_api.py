@@ -1,4 +1,4 @@
-from config import api
+from config import settings
 from common.query import Query
 from config.log import logger
 
@@ -6,11 +6,11 @@ from config.log import logger
 class IPv4InfoAPI(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = 'IPv4InfoAPIQuery'
         self.addr = ' http://ipv4info.com/api_v1/'
-        self.api = api.ipv4info_api_key
+        self.api = settings.ipv4info_api_key
 
     def query(self):
         """
@@ -35,14 +35,12 @@ class IPv4InfoAPI(Query):
             subdomains = self.match_subdomains(str(json))
             if not subdomains:
                 break
-            # 合并搜索子域名搜索结果
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
             # 不直接使用subdomains是因为可能里面会出现不符合标准的子域名
             subdomains = json.get('Subdomains')
-            if subdomains:
+            if subdomains and len(subdomains) < 300:
                 # ipv4info子域查询接口每次最多返回300个 用来判断是否还有下一页
-                if len(subdomains) < 300:
-                    break
+                break
             page += 1
             if page >= 50:  # ipv4info子域查询接口最多允许查询50页
                 break
@@ -51,7 +49,7 @@ class IPv4InfoAPI(Query):
         """
         类执行入口
         """
-        if not self.check(self.api):
+        if not self.have_api(self.api):
             return
         self.begin()
         self.query()
@@ -61,7 +59,7 @@ class IPv4InfoAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -72,4 +70,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

@@ -10,10 +10,10 @@ class Gitee(Search):
         self.source = 'GiteeSearch'
         self.module = 'Search'
         self.addr = 'https://search.gitee.com/'
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.header = self.get_header()
 
-    def search(self, full_search=False):
+    def search(self):
         """
         向接口查询子域并做子域匹配
         """
@@ -34,14 +34,10 @@ class Gitee(Search):
             if 'class="empty-box"' in resp.text:
                 break
             soup = BeautifulSoup(resp.text, 'html.parser')
-            subdomains = self.match_subdomains(soup.text, fuzzy=False)
-            if not subdomains:
+            subdomains = self.match_subdomains(soup, fuzzy=False)
+            if not self.check_subdomains(subdomains):
                 break
-            if not full_search:
-                # 搜索中发现搜索出的结果有完全重复的结果就停止搜索
-                if subdomains.issubset(self.subdomains):
-                    break
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
             if '<li class="disabled"><a href="###">' in resp.text:
                 break
             page_num += 1
@@ -60,7 +56,7 @@ class Gitee(Search):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -71,4 +67,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('qq.com')
+    run('qq.com')

@@ -1,36 +1,22 @@
 """
 检查内容安全策略收集子域名收集子域名
 """
-from common.module import Module
-from common import utils
+from common.check import Check
 
 
-class CheckRobots(Module):
-    """
-    检查robots.txt收集子域名
-    """
+class Robots(Check):
     def __init__(self, domain):
-        Module.__init__(self)
-        self.domain = self.get_maindomain(domain)
-        self.module = 'Check'
-        self.source = 'Robots'
+        Check.__init__(self)
+        self.domain = domain
+        self.module = 'check'
+        self.source = 'RobotsCheck'
 
     def check(self):
         """
         正则匹配域名的robots.txt文件中的子域
         """
-        urls = [f'http://{self.domain}/robots.txt',
-                f'https://{self.domain}/robots.txt',
-                f'http://www.{self.domain}/robots.txt',
-                f'https://www.{self.domain}/robots.txt']
-        for url in urls:
-            self.header = self.get_header()
-            self.proxy = self.get_proxy(self.source)
-            resp = self.get(url, check=False, allow_redirects=False)
-            if not resp:
-                return
-            if resp and len(resp.content):
-                self.subdomains = self.match_subdomains(resp.text)
+        filenames = {'robots.txt'}
+        self.to_check(filenames)
 
     def run(self):
         """
@@ -44,15 +30,15 @@ class CheckRobots(Module):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
     :param str domain: 域名
     """
-    check = CheckRobots(domain)
+    check = Robots(domain)
     check.run()
 
 
 if __name__ == '__main__':
-    do('qq.com')
+    run('qq.com')

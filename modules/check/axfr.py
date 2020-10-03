@@ -11,19 +11,15 @@ import dns.resolver
 import dns.zone
 
 from common import utils
-from common.module import Module
+from common.check import Check
 from config.log import logger
 
 
-class CheckAXFR(Module):
-    """
-    DNS zone transfer vulnerability base class
-    """
-
-    def __init__(self, domain: str):
-        Module.__init__(self)
-        self.domain = self.get_maindomain(domain)
-        self.module = 'Check'
+class AXFR(Check):
+    def __init__(self, domain):
+        Check.__init__(self)
+        self.domain = domain
+        self.module = 'check'
         self.source = 'AXFRCheck'
         self.results = []
 
@@ -33,24 +29,27 @@ class CheckAXFR(Module):
 
         :param server: domain server
         """
-        logger.log('DEBUG', f'Trying to perform domain transfer in {server} of {self.domain}')
+        logger.log('DEBUG', f'Trying to perform domain transfer in {server} '
+                            f'of {self.domain}')
         try:
             xfr = dns.query.xfr(where=server, zone=self.domain,
                                 timeout=5.0, lifetime=10.0)
             zone = dns.zone.from_xfr(xfr)
         except Exception as e:
             logger.log('DEBUG', e.args)
-            logger.log('DEBUG', f'Domain transfer to server {server} of {self.domain} failed')
+            logger.log('DEBUG', f'Domain transfer to server {server} of '
+                                f'{self.domain} failed')
             return
         names = zone.nodes.keys()
         for name in names:
             full_domain = str(name) + '.' + self.domain
             subdomain = self.match_subdomains(full_domain)
-            self.subdomains = self.subdomains.union(subdomain)
+            self.subdomains.update(subdomain)
             record = zone[name].to_text(name)
             self.results.append(record)
         if self.results:
-            logger.log('DEBUG', f'Found the domain transfer record of {self.domain} on {server}')
+            logger.log('DEBUG', f'Found the domain transfer record of '
+                                f'{self.domain} on {server}')
             logger.log('DEBUG', '\n'.join(self.results))
             self.results = []
 
@@ -83,16 +82,16 @@ class CheckAXFR(Module):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
     :param str domain: 域名
     """
-    check = CheckAXFR(domain)
+    check = AXFR(domain)
     check.run()
 
 
 if __name__ == '__main__':
-    do('ZoneTransfer.me')
-    # do('example.com')
+    run('ZoneTransfer.me')
+    # run('example.com')

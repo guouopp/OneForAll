@@ -8,18 +8,20 @@ OneForAll is a powerful subdomain integration tool
 :license: GNU General Public License v3.0, see LICENSE for more details.
 """
 
+import fire
 from datetime import datetime
 
-import fire
 
 import dbexport
 from brute import Brute
 from common import utils, resolve, request
 from common.database import Database
 from modules.collect import Collect
+from modules.srv import BruteSRV
 from modules.finder import Finder
-from modules import iscdn, banner
-from config import setting
+from modules.altdns import Altdns
+from modules import iscdn
+from config import settings
 from config.log import logger
 from takeover import Takeover
 
@@ -54,9 +56,9 @@ class OneForAll(object):
         python3 oneforall.py version
         python3 oneforall.py check
         python3 oneforall.py --target example.com run
-        python3 oneforall.py --target ./domains.txt run
+        python3 oneforall.py --targets ./domains.txt run
         python3 oneforall.py --target example.com --alive False run
-        python3 oneforall.py --target example.com --brute True run
+        python3 oneforall.py --target example.com --brute False run
         python3 oneforall.py --target example.com --port medium run
         python3 oneforall.py --target example.com --format csv run
         python3 oneforall.py --target example.com --dns False run
@@ -65,25 +67,25 @@ class OneForAll(object):
         python3 oneforall.py --target example.com --show True run
 
     Note:
-        --alive  True/False           Only export alive subdomains or not (default False)
-        --port   default/small/large  See details in ./config/setting.py(default port 80)
-        --format rst/csv/tsv/json/yaml/html/jira/xls/xlsx/dbf/latex/ods (result format)
-        --path   Result directory (default directory is ./results)
+        --port   small/medium/large  See details in ./config/setting.py(default small)
+        --format csv/json (result format)
+        --path   Result path (default None, automatically generated)
 
-    :param str target:     One domain or File path of one domain per line (required)
-    :param bool brute:     Use brute module (default False)
+    :param str  target:     One domain (target or targets must be provided)
+    :param str  targets:    File path of one domain per line
+    :param bool brute:     Use brute module (default True)
     :param bool dns:       Use DNS resolution (default True)
     :param bool req:       HTTP request subdomains (default True)
-    :param str port:       The port range request to the subdomains (default port 80)
+    :param str  port:       The port range to request (default small port is 80,443)
     :param bool alive:     Only export alive subdomains (default False)
-    :param str format:     Result format (default csv)
-    :param str path:       Result directory (default None)
+    :param str  format:     Result format (default csv)
+    :param str  path:       Result path (default None, automatically generated)
     :param bool takeover:  Scan subdomain takeover (default False)
     """
-
-    def __init__(self, target, brute=None, dns=None, req=None, port=None,
-                 alive=None, format=None, path=None, takeover=None):
+    def __init__(self, target=None, targets=None, brute=None, dns=None, req=None,
+                 port=None, alive=None, format=None, path=None, takeover=None):
         self.target = target
+        self.targets = targets
         self.brute = brute
         self.dns = dns
         self.req = req
@@ -101,26 +103,34 @@ class OneForAll(object):
         self.origin_table = str()  # The table name of the origin result
         self.resolve_table = str()  # The table name of the resolute result
 
-    def config(self):
+    def config_param(self):
         """
-        Configuration parameter
+        Config parameter
         """
         if self.brute is None:
-            self.brute = bool(setting.enable_brute_module)
+            self.brute = bool(settings.enable_brute_module)
         if self.dns is None:
-            self.dns = bool(setting.enable_dns_resolve)
+            self.dns = bool(settings.enable_dns_resolve)
         if self.req is None:
-            self.req = bool(setting.enable_http_request)
+            self.req = bool(settings.enable_http_request)
         if self.takeover is None:
-            self.takeover = bool(setting.enable_takeover_check)
+            self.takeover = bool(settings.enable_takeover_check)
         if self.port is None:
-            self.port = setting.http_request_port
+            self.port = settings.http_request_port
         if self.alive is None:
-            self.alive = bool(setting.result_export_alive)
+            self.alive = bool(settings.result_export_alive)
         if self.format is None:
-            self.format = setting.result_save_format
+            self.format = settings.result_save_format
         if self.path is None:
-            self.path = setting.result_save_path
+            self.path = settings.result_save_path
+
+    def check_param(self):
+        """
+        Check parameter
+        """
+        if self.target is None and self.targets is None:
+            logger.log('FATAL', 'You must provide either target or targets parameter')
+            exit(1)
 
     def export(self, table):
         """
@@ -178,8 +188,12 @@ class OneForAll(object):
         self.origin_table = self.domain + '_origin_result'
         self.resolve_table = self.domain + '_resolve_result'
 
-        collect = Collect(self.domain, export=False)
+        collect = Collect(self.domain)
         collect.run()
+
+        srv = BruteSRV(self.domain)
+        srv.run()
+
         if self.brute:
             # Due to there will be a large number of dns resolution requests,
             # may cause other network tasks to be error
@@ -212,20 +226,19 @@ class OneForAll(object):
         request.save_db(self.domain, self.data)
 
         # Finder module
-        if setting.enable_finder_module:
+        if settings.enable_finder_module:
             finder = Finder()
             self.data = finder.run(self.domain, self.data, self.port)
 
+        # altdns module
+        if settings.enable_altdns_module:
+            finder = Altdns(self.domain)
+            self.data = finder.run(self.data, self.port)
+
         # check cdn module
-        if setting.enable_cdn_check:
+        if settings.enable_cdn_check:
             self.data = iscdn.check_cdn(self.data)
             iscdn.save_db(self.domain, self.data)
-
-        # Identify banner module
-        if setting.enable_banner_identify:
-            identifier = banner.Identify()
-            self.data = identifier.run(self.data)
-            banner.save_db(self.domain, self.data)
 
         # Add the final result list to the total data list
         self.datas.extend(self.data)
@@ -236,7 +249,7 @@ class OneForAll(object):
         # Scan subdomain takeover
         if self.takeover:
             subdomains = utils.get_subdomains(self.data)
-            takeover = Takeover(subdomains)
+            takeover = Takeover(targets=subdomains)
             takeover.run()
         return self.data
 
@@ -251,15 +264,18 @@ class OneForAll(object):
         dt = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f'[*] Starting OneForAll @ {dt}\n')
         utils.check_env()
-        if setting.enable_check_version:
+        utils.auto_select_nameserver()
+        if settings.enable_check_version:
             utils.check_version(version)
         logger.log('DEBUG', 'Python ' + utils.python_version())
         logger.log('DEBUG', 'OneForAll ' + version)
         logger.log('INFOR', 'Start running OneForAll')
-        self.config()
-        self.domains = utils.get_domains(self.target)
+        self.config_param()
+        self.check_param()
+        self.domains = utils.get_domains(self.target, self.targets)
         if self.domains:
-            for self.domain in self.domains:
+            for domain in self.domains:
+                self.domain = utils.get_main_domain(domain)
                 self.main()
             utils.export_all(self.alive, self.format, self.path, self.datas)
         else:
@@ -285,5 +301,3 @@ class OneForAll(object):
 
 if __name__ == '__main__':
     fire.Fire(OneForAll)
-    # OneForAll('example.com').run()
-    # OneForAll('./domains.txt').run()

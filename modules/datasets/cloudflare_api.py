@@ -1,4 +1,4 @@
-from config import api
+from config import settings
 from common.query import Query
 from config.log import logger
 from time import sleep
@@ -11,7 +11,7 @@ class CloudFlareAPI(Query):
         self.domain = domain
         self.module = 'Dataset'
         self.source = 'CloudFlareAPIQuery'
-        self.token = api.cloudflare_api_token
+        self.token = settings.cloudflare_api_token
         self.addr = 'https://api.cloudflare.com/client/v4/'
         self.header = self.get_header()
         self.header.update({'Authorization': 'Bearer ' + self.token})
@@ -28,7 +28,10 @@ class CloudFlareAPI(Query):
                 return
         else:
             return
-        account_id = account_id_resp.json()['result'][0]['id']
+        result = account_id_resp.json()['result']
+        if not result:
+            return
+        account_id = result[0]['id']
         # query domain zone, if it not exist, create
         zones_resp = self.get(self.addr + 'zones',
                               params={'name': self.domain}, check=False)
@@ -39,18 +42,16 @@ class CloudFlareAPI(Query):
                     if zone_id:
                         self.list_dns(zone_id)
                         return
-                    else:
-                        return
+                    return
                 elif zones_resp.json()['success']:
-                    zone_id = zones_resp.json()['result'][0]['id']
-                    delete_zone_resp = self.delete(self.addr + f'zones/{zone_id}', check=False)
                     zone_id = self.create_zone(account_id)
                     if zone_id:
                         self.list_dns(zone_id)
                     return
             elif zones_resp.status_code == 403:
                 logger.log('DEBUG',
-                           f'{self.domain} is banned or not a registered domain, so cannot be added to Cloudflare.')
+                           f'{self.domain} is banned or not a registered domain, '
+                           f'so cannot be added to Cloudflare.')
                 return
             else:
                 logger.log('DEBUG',
@@ -58,29 +59,29 @@ class CloudFlareAPI(Query):
         return
 
     def create_zone(self, account_id):
-        data = {"name": self.domain, "account": {"id": account_id}, "jump_start": True,
-                "type": "full"}
-        create_zone_resp = self.post(
-            self.addr + 'zones', json=data, check=False)
+        data = {"name": self.domain, "account": {"id": account_id},
+                "jump_start": True, "type": "full"}
+        create_zone_resp = self.post(self.addr + 'zones', json=data, check=False)
         if not create_zone_resp:
-            logger.log('DEBUG',
-                       f'{create_zone_resp.status_code} {create_zone_resp.text}')
-            return
+            logger.log('DEBUG', f'{create_zone_resp.status_code} {create_zone_resp.text}')
+            return False
         if create_zone_resp.json()['success']:
             return create_zone_resp.json()['result']['id']
         else:
-            logger.log('DEBUG', f'{self.domain} is temporarily banned and cannot be added to Cloudflare')
+            logger.log('DEBUG', f'{self.domain} is temporarily banned '
+                                f'and cannot be added to Cloudflare')
             return False
 
     def list_dns(self, zone_id):
         page = 1
-        list_dns_resp = self.get(self.addr + f'zones/{zone_id}/dns_records', params={'page': page, 'per_page': 10})
+        list_dns_resp = self.get(self.addr + f'zones/{zone_id}/dns_records',
+                                 params={'page': page, 'per_page': 10})
         if not list_dns_resp:
             logger.log('DEBUG',
                        f'{list_dns_resp.status_code} {list_dns_resp.text}')
             return
         subdomains = self.match_subdomains(list_dns_resp.text)
-        self.subdomains = self.subdomains.union(subdomains)
+        self.subdomains.update(subdomains)
         if not self.subdomains:
             # waiting for cloudflare enumerate subdomains
             sleep(5)
@@ -95,7 +96,7 @@ class CloudFlareAPI(Query):
                     return
                 total_pages = list_dns_resp.json()['result_info']['total_pages']
                 subdomains = (self.match_subdomains(list_dns_resp.text))
-                self.subdomains = self.subdomains.union(subdomains)
+                self.subdomains.update(subdomains)
                 page += 1
                 if page > total_pages:
                     break
@@ -105,7 +106,7 @@ class CloudFlareAPI(Query):
         """
         class entrance
         """
-        if not self.check(self.token):
+        if not self.have_api(self.token):
             return
         self.begin()
         self.query()
@@ -115,7 +116,7 @@ class CloudFlareAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     class call entrance
 
@@ -126,4 +127,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

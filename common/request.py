@@ -1,27 +1,28 @@
 import json
-import asyncio
-import functools
+from threading import Thread
+from queue import Queue
+from operator import attrgetter
 
-import aiohttp
 import tqdm
-from aiohttp import ClientSession
+import requests
 from bs4 import BeautifulSoup
 
 from common import utils
 from config.log import logger
-from config import setting
+from config import settings
 
 
-def get_limit_conn():
-    limit_open_conn = setting.limit_open_conn
-    if limit_open_conn is None:  # 默认情况
-        limit_open_conn = utils.get_semaphore()
-    elif not isinstance(limit_open_conn, int):  # 如果传入不是数字的情况
-        limit_open_conn = utils.get_semaphore()
-    return limit_open_conn
+def req_thread_count():
+    count = settings.request_thread_count
+    if isinstance(count, int):
+        count = max(16, count)
+    else:
+        count = utils.get_request_count()
+    logger.log('DEBUG', f'Number of request threads {count}')
+    return count
 
 
-def get_ports(port):
+def get_port_seq(port):
     logger.log('DEBUG', 'Getting port range')
     ports = set()
     if isinstance(port, (set, list, tuple)):
@@ -29,9 +30,9 @@ def get_ports(port):
     elif isinstance(port, int):
         if 0 <= port <= 65535:
             ports = {port}
-    elif port in {'default', 'small', 'large'}:
-        logger.log('DEBUG', '{port} port range')
-        ports = setting.ports.get(port)
+    elif port in {'small', 'medium', 'large'}:
+        logger.log('DEBUG', f'{port} port range')
+        ports = settings.ports.get(port)
     if not ports:  # 意外情况
         logger.log('ERROR', 'The specified request port range is incorrect')
         ports = {80}
@@ -39,81 +40,39 @@ def get_ports(port):
     return set(ports)
 
 
+def gen_req_url(domain, port):
+    if str(port).endswith('443'):
+        url = f'https://{domain}:{port}'
+        if port == 443:
+            url = f'https://{domain}'
+        return url
+    url = f'http://{domain}:{port}'
+    if port == 80:
+        url = f'http://{domain}'
+    return url
+
+
 def gen_req_data(data, ports):
     logger.log('INFOR', 'Generating request urls')
-    new_data = []
-    for data in data:
-        resolve = data.get('resolve')
-        # 解析失败(0)的子域不进行http请求探测
-        if resolve == 0:
+    req_data = list()
+    req_urls = set()
+    for info in data:
+        resolve = info.get('resolve')
+        # 解析不成功的子域不进行http请求探测
+        if resolve != 1:
             continue
-        subdomain = data.get('subdomain')
+        subdomain = info.get('subdomain')
         for port in ports:
-            if str(port).endswith('443'):
-                url = f'https://{subdomain}:{port}'
-                if port == 443:
-                    url = f'https://{subdomain}'
-                data['id'] = None
-                data['url'] = url
-                data['port'] = port
-                new_data.append(data)
-                data = dict(data)  # 需要生成一个新的字典对象
-            else:
-                url = f'http://{subdomain}:{port}'
-                if port == 80:
-                    url = f'http://{subdomain}'
-                data['id'] = None
-                data['url'] = url
-                data['port'] = port
-                new_data.append(data)
-                data = dict(data)  # 需要生成一个新的字典对象
-    return new_data
+            tmp_info = info.copy()
+            tmp_info['port'] = port
+            url = gen_req_url(subdomain, port)
+            tmp_info['url'] = url
+            req_data.append(tmp_info)
+            req_urls.add(url)
+    return req_data, req_urls
 
 
-async def fetch(session, method, url):
-    """
-    请求
-
-    :param session: session对象
-    :param method: 请求方法
-    :param str url: url地址
-    :return: 响应对象和响应文本
-    """
-    timeout = aiohttp.ClientTimeout(total=None,
-                                    connect=None,
-                                    sock_read=setting.sockread_timeout,
-                                    sock_connect=setting.sockconn_timeout)
-    try:
-        if method == 'HEAD':
-            async with session.head(url,
-                                    ssl=setting.verify_ssl,
-                                    allow_redirects=setting.allow_redirects,
-                                    timeout=timeout,
-                                    proxy=setting.aiohttp_proxy) as resp:
-                text = await resp.text()
-        else:
-            async with session.get(url,
-                                   ssl=setting.verify_ssl,
-                                   allow_redirects=setting.allow_redirects,
-                                   timeout=timeout,
-                                   proxy=setting.aiohttp_proxy) as resp:
-
-                try:
-                    # 先尝试用utf-8解码
-                    text = await resp.text(encoding='utf-8', errors='strict')
-                except UnicodeError:
-                    try:
-                        # 再尝试用gb18030解码
-                        text = await resp.text(encoding='gb18030', errors='strict')
-                    except UnicodeError:
-                        # 最后尝试自动解码
-                        text = await resp.text(encoding=None, errors='ignore')
-        return resp, text
-    except Exception as e:
-        return e, None
-
-
-def get_title(markup):
+def get_html_title(markup):
     """
     获取标题
 
@@ -153,102 +112,121 @@ def get_title(markup):
     return 'None'
 
 
-def request_callback(future, index, datas):
-    resp, text = future.result()
-    if isinstance(resp, BaseException):
-        exception = resp
-        logger.log('TRACE', exception.args)
-        name = utils.get_classname(exception)
-        datas[index]['reason'] = name + ' ' + str(exception)
-        datas[index]['request'] = 0
-        datas[index]['alive'] = 0
-    else:
-        datas[index]['reason'] = resp.reason
-        datas[index]['status'] = resp.status
-        datas[index]['request'] = 1
-        if resp.status == 400 or resp.status >= 500:
-            datas[index]['alive'] = 0
-        else:
-            datas[index]['alive'] = 1
-        headers = resp.headers
-        # datas[index]['banner'] = utils.get_sample_banner(headers) 采用webanalyzer的指纹识别 原banner识别弃用
-        datas[index]['header'] = json.dumps(dict(headers))
-        if isinstance(text, str):
-            title = get_title(text).strip()
-            datas[index]['title'] = utils.remove_invalid_string(title)
-            datas[index]['response'] = utils.remove_invalid_string(text)
+def get_jump_urls(history):
+    urls = list()
+    for resp in history:
+        urls.append(str(resp.url))
+    return urls
 
 
-def get_connector():
-    limit_open_conn = get_limit_conn()
-    return aiohttp.TCPConnector(ttl_dns_cache=300,
-                                ssl=setting.verify_ssl,
-                                limit=limit_open_conn,
-                                limit_per_host=setting.limit_per_host)
+def get_progress_bar(total):
+    bar = tqdm.tqdm()
+    bar.total = total
+    bar.desc = 'Request Progress'
+    bar.ncols = 80
+    return bar
 
 
-async def async_request(urls):
-    results = list()
-    connector = get_connector()
-    header = utils.get_random_header()
-    async with ClientSession(connector=connector, headers=header) as session:
-        tasks = []
-        for i, url in enumerate(urls):
-            task = asyncio.ensure_future(fetch(session, 'GET', url))
-            tasks.append(task)
-        if tasks:
-            futures = asyncio.as_completed(tasks)
-            for future in tqdm.tqdm(futures,
-                                    total=len(tasks),
-                                    desc='Request Progress',
-                                    ncols=80):
-                result = await future
-                results.append(result)
-    return results
-
-
-async def bulk_request(data, port):
-    ports = get_ports(port)
-    no_req_data = utils.get_filtered_data(data)
-    to_req_data = gen_req_data(data, ports)
-    method = setting.request_method.upper()
-    logger.log('INFOR', f'Use {method} method to request')
-    logger.log('INFOR', 'Async subdomains request in progress')
-    connector = get_connector()
-    header = utils.get_random_header()
-    async with ClientSession(connector=connector, headers=header) as session:
-        tasks = []
-        for i, data in enumerate(to_req_data):
-            url = data.get('url')
-            task = asyncio.ensure_future(fetch(session, method, url))
-            task.add_done_callback(functools.partial(request_callback,
-                                                     index=i,
-                                                     datas=to_req_data))
-            tasks.append(task)
-        if tasks:
-            futures = asyncio.as_completed(tasks)
-            for future in tqdm.tqdm(futures,
-                                    total=len(tasks),
-                                    desc='Request Progress',
-                                    ncols=80):
-                await future
-    return to_req_data + no_req_data
-
-
-def set_loop_policy():
+def get(url, resp_list, session):
+    timeout = settings.request_timeout_second
+    redirect = settings.request_allow_redirect
+    proxy = utils.get_proxy()
     try:
-        import uvloop
-    except ImportError:
-        pass
+        resp = session.get(url, timeout=timeout, allow_redirects=redirect, proxies=proxy)
+    except Exception as e:
+        logger.log('DEBUG', e.args)
+        resp = e
+    resp_list.append((url, resp))
+
+
+def request(urls_queue, resp_list, session):
+    while not urls_queue.empty():
+        url = urls_queue.get()
+        get(url, resp_list, session)
+        urls_queue.task_done()
+
+
+def progress(bar, total, urls_queue):
+    while True:
+        remaining = urls_queue.qsize()
+        done = total - remaining
+        bar.n = done
+        bar.update()
+        if remaining == 0:
+            break
+
+
+def get_session():
+    header = utils.gen_fake_header()
+    verify = settings.request_ssl_verify
+    redirect_limit = settings.request_redirect_limit
+    session = requests.Session()
+    session.trust_env = False
+    session.headers = header
+    session.verify = verify
+    session.max_redirects = redirect_limit
+    return session
+
+
+def bulk_request(urls):
+    logger.log('INFOR', 'Requesting urls in bulk')
+    resp_list = list()
+    urls_queue = Queue()
+    for url in urls:
+        urls_queue.put(url)
+    total = len(urls)
+    session = get_session()
+    thread_count = req_thread_count()
+    bar = get_progress_bar(total)
+
+    progress_thread = Thread(target=progress, name='ProgressThread',
+                             args=(bar, total, urls_queue), daemon=True)
+    progress_thread.start()
+
+    for i in range(thread_count):
+        request_thread = Thread(target=request, name=f'RequestThread-{i}',
+                                args=(urls_queue, resp_list, session), daemon=True)
+        request_thread.start()
+
+    urls_queue.join()
+
+    return resp_list
+
+
+def gen_new_info(info, resp):
+    if isinstance(resp, Exception):
+        info['reason'] = str(resp.args)
+        info['request'] = 0
+        info['alive'] = 0
+        return info
+    info['reason'] = resp.reason
+    code = resp.status_code
+    info['status'] = code
+    info['request'] = 1
+    if code == 400 or code >= 500:
+        info['alive'] = 0
     else:
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        info['alive'] = 1
+    headers = resp.headers
+    if settings.enable_banner_identify:
+        info['banner'] = utils.get_sample_banner(headers)
+    info['header'] = json.dumps(dict(headers))
+    history = resp.history
+    info['history'] = json.dumps(get_jump_urls(history))
+    text = utils.decode_resp_text(resp)
+    title = get_html_title(text).strip()
+    info['title'] = utils.remove_invalid_string(title)
+    info['response'] = utils.remove_invalid_string(text)
+    return info
 
 
-def set_loop():
-    set_loop_policy()
-    loop = asyncio.get_event_loop()
-    asyncio.set_event_loop(loop)
-    return loop
+def gen_new_data(data, resp_list):
+    new_data = list()
+    for url, resp in resp_list:
+        for info in data:
+            if info.get('url') == url:
+                new_data.append(gen_new_info(info, resp))
+    return new_data
 
 
 def run_request(domain, data, port):
@@ -261,23 +239,15 @@ def run_request(domain, data, port):
     :return list: result
     """
     logger.log('INFOR', f'Start requesting subdomains of {domain}')
-    loop = set_loop()
     data = utils.set_id_none(data)
-    request_coroutine = bulk_request(data, port)
-    data = loop.run_until_complete(request_coroutine)
-    loop.run_until_complete(asyncio.sleep(0.25))
-    count = utils.count_alive(data)
+    ports = get_port_seq(port)
+    req_data, req_urls = gen_req_data(data, ports)
+    resp_list = bulk_request(req_urls)
+    new_data = gen_new_data(req_data, resp_list)
+    count = utils.count_alive(new_data)
     logger.log('INFOR', f'Found that {domain} has {count} alive subdomains')
-    return data
-
-
-def urls_request(urls):
-    logger.log('INFOR', 'Start urls request module')
-    loop = set_loop()
-    request_coroutine = async_request(urls)
-    data = loop.run_until_complete(request_coroutine)
-    loop.run_until_complete(asyncio.sleep(0.25))
-    return data
+    sorted_data = utils.sort_by_subdomain(new_data)
+    return sorted_data
 
 
 def save_db(name, data):

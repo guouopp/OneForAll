@@ -1,41 +1,22 @@
 """
 检查内容安全策略收集子域名收集子域名
 """
-from common.module import Module
-from common import utils
+from common.check import Check
 
 
-class CheckRobots(Module):
-    """
-    检查sitemap收集子域名
-    """
+class Sitemap(Check):
     def __init__(self, domain):
-        Module.__init__(self)
-        self.domain = self.get_maindomain(domain)
-        self.module = 'Check'
-        self.source = 'Sitemap'
+        Check.__init__(self)
+        self.domain = domain
+        self.module = 'check'
+        self.source = 'SitemapCheck'
 
     def check(self):
         """
         正则匹配域名的sitemap文件中的子域
         """
-        urls = [f'http://{self.domain}/sitemap.xml',
-                f'http://www.{self.domain}/sitemap.xml',
-                f'http://{self.domain}/sitemap.txt',
-                f'http://www.{self.domain}/sitemap.txt',
-                f'http://{self.domain}/sitemap.html',
-                f'http://www.{self.domain}/sitemap.html',
-                f'http://{self.domain}/sitemap_index.xml',
-                f'http://www.{self.domain}/sitemap_index.xml']
-        for url in urls:
-            self.header = self.get_header()
-            self.proxy = self.get_proxy(self.source)
-            self.timeout = 10
-            resp = self.get(url, check=False)
-            if not resp:
-                return
-            if resp and len(resp.content):
-                self.subdomains = self.match_subdomains(resp.text)
+        filenames = {'sitemap.xml', 'sitemap.txt', 'sitemap.html', 'sitemapindex.xml'}
+        self.to_check(filenames)
 
     def run(self):
         """
@@ -49,15 +30,15 @@ class CheckRobots(Module):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
     :param str domain: 域名
     """
-    check = CheckRobots(domain)
+    check = Sitemap(domain)
     check.run()
 
 
 if __name__ == '__main__':
-    do('qq.com')
+    run('qq.com')

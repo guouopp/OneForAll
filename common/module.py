@@ -1,4 +1,3 @@
-# coding=utf-8
 """
 Module base class
 """
@@ -9,9 +8,8 @@ import time
 
 import requests
 from config.log import logger
-from config import setting
+from config import settings
 from common import utils
-from common.domain import Domain
 from common.database import Database
 
 lock = threading.Lock()
@@ -24,19 +22,18 @@ class Module(object):
         self.cookie = None
         self.header = dict()
         self.proxy = None
-        self.delay = setting.request_delay  # 请求睡眠时延
-        self.timeout = setting.request_timeout  # 请求超时时间
-        self.verify = setting.request_verify  # 请求SSL验证
+        self.delay = 1  # 请求睡眠时延
+        self.timeout = settings.request_timeout_second  # 请求超时时间
+        self.verify = settings.request_ssl_verify  # 请求SSL验证
         self.domain = str()  # 当前进行子域名收集的主域
-        self.type = 'A'  # 对主域进行子域收集时利用的DNS记录查询类型(默认利用A记录)
         self.subdomains = set()  # 存放发现的子域
-        self.records = dict()  # 存放子域解析记录
+        self.infos = dict()  # 存放子域有关信息
         self.results = list()  # 存放模块结果
         self.start = time.time()  # 模块开始执行时间
         self.end = None  # 模块结束执行时间
         self.elapse = None  # 模块执行耗时
 
-    def check(self, *apis):
+    def have_api(self, *apis):
         """
         Simply check whether the api information configure or not
 
@@ -76,38 +73,12 @@ class Module(object):
         :param dict params: request parameters
         :param bool check: check response
         :param kwargs: other params
-        :return: requests's response object
+        :return: response object
         """
+        session = requests.Session()
+        session.trust_env = False
         try:
-            resp = requests.head(url,
-                                 params=params,
-                                 cookies=self.cookie,
-                                 headers=self.header,
-                                 proxies=self.proxy,
-                                 timeout=self.timeout,
-                                 verify=self.verify,
-                                 **kwargs)
-        except Exception as e:
-            logger.log('ERROR', e.args)
-            return None
-        if not check:
-            return resp
-        if utils.check_response('HEAD', resp):
-            return resp
-        return None
-
-    def get(self, url, params=None, check=True, **kwargs):
-        """
-        Custom get request
-
-        :param str  url: request url
-        :param dict params: request parameters
-        :param bool check: check response
-        :param kwargs: other params
-        :return: requests's response object
-        """
-        try:
-            resp = requests.get(url,
+            resp = session.head(url,
                                 params=params,
                                 cookies=self.cookie,
                                 headers=self.header,
@@ -116,7 +87,46 @@ class Module(object):
                                 verify=self.verify,
                                 **kwargs)
         except Exception as e:
-            logger.log('ERROR', e.args)
+            logger.log('ERROR', e.args[0])
+            return None
+        if not check:
+            return resp
+        if utils.check_response('HEAD', resp):
+            return resp
+        return None
+
+    def get(self, url, params=None, check=True, ignore=False, raise_error=False, **kwargs):
+        """
+        Custom get request
+
+        :param str  url: request url
+        :param dict params: request parameters
+        :param bool check: check response
+        :param bool ignore: ignore error
+        :param bool raise_error: raise error or not
+        :param kwargs: other params
+        :return: response object
+        """
+        session = requests.Session()
+        session.trust_env = False
+        level = 'ERROR'
+        if ignore:
+            level = 'DEBUG'
+        try:
+            resp = session.get(url,
+                               params=params,
+                               cookies=self.cookie,
+                               headers=self.header,
+                               proxies=self.proxy,
+                               timeout=self.timeout,
+                               verify=self.verify,
+                               **kwargs)
+        except Exception as e:
+            if raise_error:
+                if isinstance(e, requests.exceptions.ConnectTimeout):
+                    logger.log(level, e.args[0])
+                    raise e
+            logger.log(level, e.args[0])
             return None
         if not check:
             return resp
@@ -132,19 +142,21 @@ class Module(object):
         :param dict data: request data
         :param bool check: check response
         :param kwargs: other params
-        :return: requests's response object
+        :return: response object
         """
+        session = requests.Session()
+        session.trust_env = False
         try:
-            resp = requests.post(url,
-                                 data=data,
-                                 cookies=self.cookie,
-                                 headers=self.header,
-                                 proxies=self.proxy,
-                                 timeout=self.timeout,
-                                 verify=self.verify,
-                                 **kwargs)
+            resp = session.post(url,
+                                data=data,
+                                cookies=self.cookie,
+                                headers=self.header,
+                                proxies=self.proxy,
+                                timeout=self.timeout,
+                                verify=self.verify,
+                                **kwargs)
         except Exception as e:
-            logger.log('ERROR', e.args)
+            logger.log('ERROR', e.args[0])
             return None
         if not check:
             return resp
@@ -159,18 +171,20 @@ class Module(object):
         :param str  url: request url
         :param bool check: check response
         :param kwargs: other params
-        :return: requests's response object
+        :return: response object
         """
+        session = requests.Session()
+        session.trust_env = False
         try:
-            resp = requests.delete(url,
-                                   cookies=self.cookie,
-                                   headers=self.header,
-                                   proxies=self.proxy,
-                                   timeout=self.timeout,
-                                   verify=self.verify,
-                                   **kwargs)
+            resp = session.delete(url,
+                                  cookies=self.cookie,
+                                  headers=self.header,
+                                  proxies=self.proxy,
+                                  timeout=self.timeout,
+                                  verify=self.verify,
+                                  **kwargs)
         except Exception as e:
-            logger.log('ERROR', e.args)
+            logger.log('ERROR', e.args[0])
             return None
         if not check:
             return resp
@@ -184,11 +198,11 @@ class Module(object):
 
         :return: header
         """
-        # logger.log('DEBUG', f'Get request header')
-        if setting.enable_fake_header:
-            return utils.gen_fake_header()
-        else:
-            return self.header
+        headers = utils.gen_fake_header()
+        if isinstance(headers, dict):
+            self.header = headers
+            return headers
+        return self.header
 
     def get_proxy(self, module):
         """
@@ -197,31 +211,33 @@ class Module(object):
         :param str module: module name
         :return: proxy
         """
-        if not setting.enable_proxy:
+        if not settings.enable_request_proxy:
             logger.log('TRACE', f'All modules do not use proxy')
             return self.proxy
-        if setting.proxy_all_module:
+        if settings.proxy_all_module:
             logger.log('TRACE', f'{module} module uses proxy')
             return utils.get_random_proxy()
-        if module in setting.proxy_partial_module:
+        if module in settings.proxy_partial_module:
             logger.log('TRACE', f'{module} module uses proxy')
             return utils.get_random_proxy()
         else:
             logger.log('TRACE', f'{module} module does not use proxy')
             return self.proxy
 
-    def match_subdomains(self, html, distinct=True, fuzzy=True):
-        return utils.match_subdomains(self.domain, html, distinct, fuzzy)
+    def match_subdomains(self, resp, distinct=True, fuzzy=True):
+        if not resp:
+            return set()
+        elif isinstance(resp, str):
+            return utils.match_subdomains(self.domain, resp, distinct, fuzzy)
+        elif hasattr(resp, 'text'):
+            return utils.match_subdomains(self.domain, resp.text, distinct, fuzzy)
+        else:
+            return set()
 
-    @staticmethod
-    def get_maindomain(domain):
-        """
-        Get main domain
-
-        :param str domain: domain
-        :return: main domain
-        """
-        return Domain(domain).registered()
+    def collect_subdomains(self, resp):
+        subdomains = self.match_subdomains(resp)
+        self.subdomains.update(subdomains)
+        return self.subdomains
 
     def save_json(self):
         """
@@ -229,11 +245,11 @@ class Module(object):
 
         :return bool: whether saved successfully
         """
-        if not setting.save_module_result:
+        if not settings.save_module_result:
             return False
         logger.log('TRACE', f'Save the subdomain results found by '
                             f'{self.source} module as a json file')
-        path = setting.result_save_dir.joinpath(self.domain, self.module)
+        path = settings.result_save_dir.joinpath(self.domain, self.module)
         path.mkdir(parents=True, exist_ok=True)
         name = self.source + '.json'
         path = path.joinpath(name)
@@ -244,20 +260,11 @@ class Module(object):
                       'elapse': self.elapse,
                       'find': len(self.subdomains),
                       'subdomains': list(self.subdomains),
-                      'records': self.records}
+                      'infos': self.infos}
             json.dump(result, file, ensure_ascii=False, indent=4)
         return True
 
-    def gen_record(self, subdomains, record):
-        """
-        Generate record dictionary
-        """
-        item = dict()
-        item['content'] = record
-        for subdomain in subdomains:
-            self.records[subdomain] = item
-
-    def gen_result(self, find=0, brute=None, valid=0):
+    def gen_result(self):
         """
         Generate results
         """
@@ -265,7 +272,6 @@ class Module(object):
         if not len(self.subdomains):  # 该模块一个子域都没有发现的情况
             logger.log('DEBUG', f'{self.source} module result is empty')
             result = {'id': None,
-                      'type': self.type,
                       'alive': None,
                       'request': None,
                       'resolve': None,
@@ -275,7 +281,7 @@ class Module(object):
                       'port': None,
                       'level': None,
                       'cname': None,
-                      'content': None,
+                      'ip': None,
                       'public': None,
                       'cdn': None,
                       'status': None,
@@ -283,89 +289,71 @@ class Module(object):
                       'title': None,
                       'banner': None,
                       'header': None,
+                      'history': None,
                       'response': None,
                       'times': None,
                       'ttl': None,
                       'cidr': None,
                       'asn': None,
                       'org': None,
-                      'ip2region': None,
-                      'ip2location': None,
+                      'addr': None,
+                      'isp': None,
                       'resolver': None,
                       'module': self.module,
                       'source': self.source,
                       'elapse': self.elapse,
-                      'find': find,
-                      'brute': brute,
-                      'valid': valid}
+                      'find': None}
             self.results.append(result)
         else:
             for subdomain in self.subdomains:
                 url = 'http://' + subdomain
                 level = subdomain.count('.') - self.domain.count('.')
-                record = self.records.get(subdomain)
-                if record is None:
-                    record = dict()
-                resolve = record.get('resolve')
-                request = record.get('request')
-                alive = record.get('alive')
-                if self.type != 'A':  # 不是利用的DNS记录的A记录查询子域默认都有效
-                    resolve = 1
-                    request = 1
-                    alive = 1
-                reason = record.get('reason')
-                resolver = record.get('resolver')
-                cname = record.get('cname')
-                content = record.get('content')
-                times = record.get('times')
-                ttl = record.get('ttl')
-                public = record.get('public')
-                cdn = record.get('cdn')
-                cidr = record.get('cidr')
-                asn = record.get('asn')
-                org = record.get('org')
-                ip2region = record.get('ip2region')
-                ip2location = record.get('ip2location')
+                info = self.infos.get(subdomain)
+                if info is None:
+                    info = dict()
+                cname = info.get('cname')
+                ip = info.get('ip')
+                times = info.get('times')
+                ttl = info.get('ttl')
+                public = info.get('public')
                 if isinstance(cname, list):
                     cname = ','.join(cname)
-                    content = ','.join(content)
+                    ip = ','.join(ip)
                     times = ','.join([str(num) for num in times])
                     ttl = ','.join([str(num) for num in ttl])
                     public = ','.join([str(num) for num in public])
                 result = {'id': None,
-                          'type': self.type,
-                          'alive': alive,
-                          'request': request,
-                          'resolve': resolve,
+                          'alive': info.get('alive'),
+                          'request': info.get('request'),
+                          'resolve': info.get('resolve'),
                           'new': None,
                           'url': url,
                           'subdomain': subdomain,
                           'port': 80,
                           'level': level,
                           'cname': cname,
-                          'content': content,
+                          'ip': ip,
                           'public': public,
-                          'cdn': cdn,
+                          'cdn': info.get('cdn'),
                           'status': None,
-                          'reason': reason,
+                          'reason': info.get('reason'),
                           'title': None,
                           'banner': None,
                           'header': None,
+                          'history': None,
                           'response': None,
                           'times': times,
                           'ttl': ttl,
-                          'cidr': cidr,
-                          'asn': asn,
-                          'org': org,
-                          'ip2region': ip2region,
-                          'ip2location': ip2location,
-                          'resolver': resolver,
+                          'cidr': info.get('cidr'),
+                          'asn': info.get('asn'),
+                          'org': info.get('org'),
+                          'addr': info.get('addr'),
+                          'isp': info.get('isp'),
+                          'resolver': info.get('resolver'),
                           'module': self.module,
                           'source': self.source,
                           'elapse': self.elapse,
-                          'find': find,
-                          'brute': brute,
-                          'valid': valid}
+                          'find': len(self.subdomains)}
                 self.results.append(result)
 
     def save_db(self):

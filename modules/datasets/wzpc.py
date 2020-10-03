@@ -6,7 +6,7 @@ from common.query import Query
 class WZPCQuery(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = 'WZPCQuery'
 
@@ -32,7 +32,9 @@ class WZPCQuery(Query):
             if not resp:
                 break
             subdomains = self.match_subdomains(resp.text)
-            self.subdomains = self.subdomains.union(subdomains)
+            if not subdomains:  # 没有发现子域名则停止查询
+                break
+            self.subdomains.update(subdomains)
             if not subdomains:
                 break
             if page_num > 10:
@@ -51,7 +53,7 @@ class WZPCQuery(Query):
         self.save_db()
 
 
-def do(domain):
+def run(domain):
     """
     类统一调用入口
 
@@ -62,5 +64,5 @@ def do(domain):
 
 
 if __name__ == '__main__':
-    do('sc.gov.cn')
-    do('bkzy.org')
+    run('sc.gov.cn')
+    run('bkzy.org')

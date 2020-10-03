@@ -1,16 +1,16 @@
-from config import api
+from config import settings
 from common.query import Query
 
 
 class CirclAPI(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = 'CirclAPIQuery'
         self.addr = 'https://www.circl.lu/pdns/query/'
-        self.user = api.circl_api_username
-        self.pwd = api.circl_api_password
+        self.user = settings.circl_api_username
+        self.pwd = settings.circl_api_password
 
     def query(self):
         """
@@ -19,17 +19,13 @@ class CirclAPI(Query):
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
         resp = self.get(self.addr + self.domain, auth=(self.user, self.pwd))
-        if not resp:
-            return
-        subdomains = self.match_subdomains(resp.text)
-        # 合并搜索子域名搜索结果
-        self.subdomains = self.subdomains.union(subdomains)
+        self.subdomains = self.collect_subdomains(resp)
 
     def run(self):
         """
         类执行入口
         """
-        if not self.check(self.user, self.pwd):
+        if not self.have_api(self.user, self.pwd):
             return
         self.begin()
         self.query()
@@ -39,7 +35,7 @@ class CirclAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -50,4 +46,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

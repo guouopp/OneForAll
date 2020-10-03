@@ -1,15 +1,15 @@
-from config import api
+from config import settings
 from common.query import Query
 
 
 class PassiveDnsAPI(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Dataset'
         self.source = 'PassiveDnsQuery'
-        self.addr = api.passivedns_api_addr or 'http://api.passivedns.cn'
-        self.token = api.passivedns_api_token
+        self.addr = settings.passivedns_api_addr or 'http://api.passivedns.cn'
+        self.token = settings.passivedns_api_token
 
     def query(self):
         """
@@ -20,18 +20,14 @@ class PassiveDnsAPI(Query):
         self.proxy = self.get_proxy(self.source)
         url = self.addr + '/flint/rrset/*.' + self.domain
         resp = self.get(url)
-        if not resp:
-            return
-        subdomains = self.match_subdomains(resp.text)
-        # 合并搜索子域名搜索结果
-        self.subdomains = self.subdomains.union(subdomains)
+        self.subdomains = self.collect_subdomains(resp)
 
     def run(self):
         """
         类执行入口
         """
         if 'api.passivedns.cn' in self.addr:
-            if not self.check(self.token):
+            if not self.have_api(self.token):
                 return
         self.begin()
         self.query()
@@ -41,7 +37,7 @@ class PassiveDnsAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -52,4 +48,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

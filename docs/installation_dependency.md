@@ -15,10 +15,10 @@ python oneforall.py --help
 
 ### Ubuntu/Debian系统(包括kali)
 
-1. 安装git
+1. 安装git和pip3
 ```bash
 sudo apt update
-sudo apt install git -y
+sudo apt install git python3-pip -y
 ```
 
 2. 克隆OneForAll项目
@@ -31,17 +31,16 @@ git clone https://gitee.com/shmilylty/OneForAll.git
 cd OneForAll/
 sudo apt install python3-dev python3-pip python3-testresources -y
 sudo python3 -m pip install -U pip setuptools wheel -i https://mirrors.aliyun.com/pypi/simple/
-sudo pip3 install uvloop -i https://mirrors.aliyun.com/pypi/simple/
 sudo pip3 install --ignore-installed -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 python3 oneforall.py --help
 ```
 
 ### RHEL/Centos系统
 
-1. 安装git
+1. 安装git和pip3
 ```bash
 sudo yum update
-sudo yum install git -y
+sudo yum install git python3-pip -y
 ```
 
 2. 克隆OneForAll项目
@@ -54,7 +53,6 @@ git clone https://gitee.com/shmilylty/OneForAll.git
 cd OneForAll/
 sudo yum install gcc python3-devel python3-pip -y
 sudo python3 -m pip install -U pip setuptools wheel -i https://mirrors.aliyun.com/pypi/simple/
-sudo pip3 install uvloop -i https://mirrors.aliyun.com/pypi/simple/
 sudo pip3 install --ignore-installed -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 python3 oneforall.py --help
 ```
@@ -71,6 +69,5 @@ git clone https://gitee.com/shmilylty/OneForAll.git
 cd OneForAll/
 python3 -m pip install -U pip setuptools wheel -i https://mirrors.aliyun.com/pypi/simple/
 pip3 install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
-pip3 install uvloop -i https://mirrors.aliyun.com/pypi/simple/
 python3 oneforall.py --help
 ```

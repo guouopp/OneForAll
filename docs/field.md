@@ -1,10 +1,8 @@
+注意：以下部分字段只存于结果数据库中
+
 ### id
 
 标识作用无意义
-
-### type
-
-DNS记录类型
 
 ### new
 
@@ -38,13 +36,17 @@ DNS记录类型
 
 cname记录
 
-### content
+### ip
 
 解析到的IP
 
 ### public
 
 是否是公网IP
+
+### cdn
+
+解析的IP是否CDN
 
 ### port
 
@@ -66,6 +68,12 @@ HTTP响应的状态码
 
 网站指纹信息
 
+### history
+请求时URL跳转历史
+
+### response
+响应体文本内容
+
 ### times
 
 在爆破中ip重复出现的次数
@@ -76,19 +84,19 @@ DNS解析返回的TTL值
 
 ### cidr
 
-IP2LOCATION-ASN库查询出的CIDR
+ip2location库查询出的CIDR
 
 ### asn
 
-IP2LOCATION-ASN库查询出的ASN
+ip2location库查询出的ASN
 
-### ip2region
+### addr
 
 ip2region库查询出的物理地址
 
-### ip2location
+### isp
 
-ip2location库查询出的物理地址
+ip2region库查询出的网络服务提供商
 
 ### resolver
 
@@ -108,12 +116,4 @@ ip2location库查询出的物理地址
 
 ### find
 
-当前子域名收集模块找到子域的个数
-
-### brute
-
-爆破枚举子域名时所用的字典大小
-
-### valid
-
-爆破枚举子域名时中发现的有效子域个数
+当前模块发现的子域个数

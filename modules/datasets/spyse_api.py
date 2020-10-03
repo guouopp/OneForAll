@@ -1,5 +1,4 @@
-from config import api
-from common import utils
+from config import settings
 from common.query import Query
 
 
@@ -9,7 +8,7 @@ class SpyseAPI(Query):
         self.domain = domain
         self.module = 'Dataset'
         self.source = 'SpyseAPIQuery'
-        self.token = api.spyse_api_token
+        self.token = settings.spyse_api_token
 
     def query(self):
         """
@@ -28,10 +27,9 @@ class SpyseAPI(Query):
                 return
             json = resp.json()
             subdomains = self.match_subdomains(str(json))
-            if not subdomains:  # 搜索没有发现子域名则停止搜索
+            if not subdomains:  # 没有发现子域名则停止查询
                 break
-            # 合并搜索子域名搜索结果
-            self.subdomains = self.subdomains.union(subdomains)
+            self.subdomains.update(subdomains)
             offset += limit
             if len(json.get('data').get('items')) < limit:
                 break
@@ -40,7 +38,7 @@ class SpyseAPI(Query):
         """
         类执行入口
         """
-        if not self.check(self.token):
+        if not self.have_api(self.token):
             return
         self.begin()
         self.query()
@@ -50,7 +48,7 @@ class SpyseAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -61,4 +59,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')

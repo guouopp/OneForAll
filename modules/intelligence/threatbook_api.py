@@ -1,15 +1,15 @@
-from config import api
+from config import settings
 from common.query import Query
 
 
 class ThreatBookAPI(Query):
     def __init__(self, domain):
         Query.__init__(self)
-        self.domain = self.get_maindomain(domain)
+        self.domain = domain
         self.module = 'Intelligence'
         self.source = 'ThreatBookAPIQuery'
         self.addr = 'https://api.threatbook.cn/v3/domain/sub_domains'
-        self.key = api.threatbook_api_key
+        self.key = settings.threatbook_api_key
 
     def query(self):
         """
@@ -20,16 +20,13 @@ class ThreatBookAPI(Query):
         params = {'apikey': self.key,
                   'resource': self.domain}
         resp = self.post(self.addr, params)
-        if not resp:
-            return
-        subdomains = self.match_subdomains(resp.text)
-        self.subdomains = self.subdomains.union(subdomains)
+        self.subdomains = self.collect_subdomains(resp)
 
     def run(self):
         """
         类执行入口
         """
-        if not self.check(self.key):
+        if not self.have_api(self.key):
             return
         self.begin()
         self.query()
@@ -39,7 +36,7 @@ class ThreatBookAPI(Query):
         self.save_db()
 
 
-def do(domain):  # 统一入口名字 方便多线程调用
+def run(domain):
     """
     类统一调用入口
 
@@ -50,4 +47,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 
 if __name__ == '__main__':
-    do('example.com')
+    run('example.com')
